@@ -29,21 +29,35 @@ type Store interface {
 	GetNode(id string) (model.Node, error)
 	CreateNode(n model.Node) error
 	DeleteNode(id string) error
+
+	ListPlans() ([]model.Plan, error)
+	GetPlan(id string) (model.Plan, error)
+	CreatePlan(p model.Plan) error
+	DeletePlan(id string) error
+
+	ListOrders() ([]model.Order, error)
+	GetOrder(id string) (model.Order, error)
+	CreateOrder(o model.Order) error
+	UpdateOrder(o model.Order) error
 }
 
 // MemoryStore is a thread-safe, in-process Store. Data is lost on restart;
 // it exists so the panel runs with zero setup during early development.
 type MemoryStore struct {
-	mu    sync.RWMutex
-	users map[string]model.User
-	nodes map[string]model.Node
+	mu     sync.RWMutex
+	users  map[string]model.User
+	nodes  map[string]model.Node
+	plans  map[string]model.Plan
+	orders map[string]model.Order
 }
 
 // NewMemoryStore returns an empty in-memory store.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		users: make(map[string]model.User),
-		nodes: make(map[string]model.Node),
+		users:  make(map[string]model.User),
+		nodes:  make(map[string]model.Node),
+		plans:  make(map[string]model.Plan),
+		orders: make(map[string]model.Order),
 	}
 }
 
@@ -153,5 +167,101 @@ func (s *MemoryStore) DeleteNode(id string) error {
 		return ErrNotFound
 	}
 	delete(s.nodes, id)
+	return nil
+}
+
+// ListPlans returns all plans ordered by creation time (oldest first).
+func (s *MemoryStore) ListPlans() ([]model.Plan, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]model.Plan, 0, len(s.plans))
+	for _, p := range s.plans {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// GetPlan returns the plan with the given id, or ErrNotFound.
+func (s *MemoryStore) GetPlan(id string) (model.Plan, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	p, ok := s.plans[id]
+	if !ok {
+		return model.Plan{}, ErrNotFound
+	}
+	return p, nil
+}
+
+// CreatePlan stores a new plan.
+func (s *MemoryStore) CreatePlan(p model.Plan) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.plans[p.ID] = p
+	return nil
+}
+
+// DeletePlan removes a plan by id, returning ErrNotFound if absent.
+func (s *MemoryStore) DeletePlan(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.plans[id]; !ok {
+		return ErrNotFound
+	}
+	delete(s.plans, id)
+	return nil
+}
+
+// ListOrders returns all orders ordered by creation time (oldest first).
+func (s *MemoryStore) ListOrders() ([]model.Order, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]model.Order, 0, len(s.orders))
+	for _, o := range s.orders {
+		out = append(out, o)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return out, nil
+}
+
+// GetOrder returns the order with the given id, or ErrNotFound.
+func (s *MemoryStore) GetOrder(id string) (model.Order, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	o, ok := s.orders[id]
+	if !ok {
+		return model.Order{}, ErrNotFound
+	}
+	return o, nil
+}
+
+// CreateOrder stores a new order.
+func (s *MemoryStore) CreateOrder(o model.Order) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.orders[o.ID] = o
+	return nil
+}
+
+// UpdateOrder replaces an existing order with the same id, or ErrNotFound.
+func (s *MemoryStore) UpdateOrder(o model.Order) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.orders[o.ID]; !ok {
+		return ErrNotFound
+	}
+	s.orders[o.ID] = o
 	return nil
 }

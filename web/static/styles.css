@@ -108,7 +108,12 @@ tr:hover td { background: #1a212d; }
 .bar > i.warn { background: var(--amber); }
 .bar > i.full { background: var(--red); }
 
-.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+.plan-sel {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 7px; padding: 5px 7px; font-size: 12px; max-width: 150px;
+}
+.plan-sel:focus { outline: none; border-color: var(--accent); }
 .empty { color: var(--muted); padding: 22px 20px; margin: 0; font-size: 13px; }
 
 footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }

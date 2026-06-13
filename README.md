@@ -23,7 +23,7 @@ No Python virtualenvs, no `node_modules` on your server — just one binary.
 | Single binary deploy | ❌ | ❌ | ✅ |
 | Traffic quota & expiry | ✅ | ✅ | ✅ |
 | Clean, modern UI | ⚠️ | ⚠️ | ✅ |
-| Built-in billing | ❌ | ❌ | ✅ *(planned)* |
+| Built-in billing | ❌ | ❌ | ✅ |
 | White-label / resellers | ❌ | ❌ | ✅ *(planned)* |
 
 Wisp's two principles are **simplicity** and **functionality**: trivial to install,
@@ -34,8 +34,8 @@ powerful enough to run a real VPN business.
 > ⚠️ **Early development.** Working today: SQLite persistence, Xray gRPC
 > integration (VLESS + Reality), base64 subscription links, **multi-node** (a
 > panel driving any number of node agents over mTLS), **traffic accounting**
-> with automatic disable on quota or expiry, and an **embedded web dashboard**.
-> Billing is next on the roadmap.
+> with automatic disable on quota or expiry, **billing** (plans, orders,
+> apply-on-payment), and an **embedded web dashboard**.
 
 ## Quick start
 
@@ -77,6 +77,12 @@ curl http://localhost:8080/api/users
 | `POST` | `/api/nodes` | Register a node (`{"name": "...", "address": "host:port"}`) |
 | `GET` | `/api/nodes/{id}` | Get one node |
 | `DELETE` | `/api/nodes/{id}` | Remove a node |
+| `GET` | `/api/plans` | List plans |
+| `POST` | `/api/plans` | Create a plan (`{"name","price_cents","currency","duration_days","data_limit"}`) |
+| `DELETE` | `/api/plans/{id}` | Delete a plan |
+| `GET` | `/api/orders` | List orders |
+| `POST` | `/api/orders` | Open an order (`{"user_id","plan_id"}`) |
+| `POST` | `/api/orders/{id}/pay` | Settle an order and apply its plan to the user |
 | `GET` | `/sub/{id}` | Subscription content (base64 share links) for a VPN client |
 
 ## Configuration
@@ -143,6 +149,29 @@ curl -X POST http://localhost:8080/api/nodes \
 User add/remove fans out to every enabled node, best-effort: a node that is
 down is logged and skipped, never blocking the operation.
 
+## Billing
+
+Define **plans** (price, duration, data quota); a user buys one by opening an
+**order**, and settling the order applies the plan — extending the user's
+expiry (stacking onto any remaining time), resetting the quota and usage, and
+re-enabling access.
+
+```bash
+# create a plan: $5, 30 days, 100 GB
+curl -X POST http://localhost:8080/api/plans -H 'Content-Type: application/json' \
+  -d '{"name":"1 month / 100 GB","price_cents":500,"currency":"USD","duration_days":30,"data_limit":107374182400}'
+
+# open an order for a user + plan, then settle it
+curl -X POST http://localhost:8080/api/orders -H 'Content-Type: application/json' \
+  -d '{"user_id":"<uid>","plan_id":"<pid>"}'
+curl -X POST http://localhost:8080/api/orders/<order-id>/pay
+```
+
+The `pay` endpoint is the manual/admin path. A real payment gateway plugs in by
+verifying its webhook signature and then calling the same `billing.Apply` logic
+— so adding Cryptomus, YooKassa, Telegram Payments, Stripe, etc. is a small,
+self-contained change.
+
 ## Architecture
 
 Wisp is a **control plane / data plane** system:
@@ -173,8 +202,8 @@ See [`internal/`](internal/) for the package layout and [`cmd/`](cmd/) for the
 - [x] **Phase 2** — Multi-node: node agent, mTLS, user distribution
 - [x] **Phase 3** — Traffic accounting, quota & expiry, auto-disable
 - [x] **Web dashboard** — embedded single-page admin UI (zero build step)
-- [ ] **Phase 4** — Billing: plans, payments, auto-renewal
-- [ ] **Phase 5** — White-label / resellers
+- [x] **Phase 4** — Billing: plans, orders, apply-on-payment (webhook-ready)
+- [ ] **Phase 5** — White-label / resellers, recurring auto-renewal, real gateways
 
 ## Development
 

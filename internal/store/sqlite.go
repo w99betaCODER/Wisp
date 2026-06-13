@@ -59,6 +59,26 @@ CREATE TABLE IF NOT EXISTS nodes (
     address    TEXT NOT NULL,
     enabled    INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL
+);
+CREATE TABLE IF NOT EXISTS plans (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    price_cents   INTEGER NOT NULL DEFAULT 0,
+    currency      TEXT NOT NULL DEFAULT 'USD',
+    duration_days INTEGER NOT NULL DEFAULT 30,
+    data_limit    INTEGER NOT NULL DEFAULT 0,
+    created_at    TIMESTAMP NOT NULL
+);
+CREATE TABLE IF NOT EXISTS orders (
+    id           TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL,
+    plan_id      TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL DEFAULT 0,
+    currency     TEXT NOT NULL DEFAULT 'USD',
+    status       TEXT NOT NULL DEFAULT 'pending',
+    provider     TEXT NOT NULL DEFAULT 'manual',
+    created_at   TIMESTAMP NOT NULL,
+    paid_at      TIMESTAMP
 );`
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
@@ -228,10 +248,166 @@ func (s *SQLiteStore) DeleteNode(id string) error {
 	return nil
 }
 
+// ListPlans returns all plans ordered by creation time (oldest first).
+func (s *SQLiteStore) ListPlans() ([]model.Plan, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, price_cents, currency, duration_days, data_limit, created_at
+		FROM plans ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list plans: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.Plan
+	for rows.Next() {
+		p, err := scanPlan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// GetPlan returns the plan with the given id, or ErrNotFound.
+func (s *SQLiteStore) GetPlan(id string) (model.Plan, error) {
+	row := s.db.QueryRow(`
+		SELECT id, name, price_cents, currency, duration_days, data_limit, created_at
+		FROM plans WHERE id = ?`, id)
+
+	p, err := scanPlan(row)
+	if err == sql.ErrNoRows {
+		return model.Plan{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Plan{}, fmt.Errorf("get plan: %w", err)
+	}
+	return p, nil
+}
+
+// CreatePlan inserts a new plan.
+func (s *SQLiteStore) CreatePlan(p model.Plan) error {
+	_, err := s.db.Exec(`
+		INSERT INTO plans (id, name, price_cents, currency, duration_days, data_limit, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.PriceCents, p.Currency, p.DurationDays, p.DataLimit, p.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create plan: %w", err)
+	}
+	return nil
+}
+
+// DeletePlan removes a plan by id, returning ErrNotFound if absent.
+func (s *SQLiteStore) DeletePlan(id string) error {
+	res, err := s.db.Exec(`DELETE FROM plans WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete plan: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ListOrders returns all orders ordered by creation time (oldest first).
+func (s *SQLiteStore) ListOrders() ([]model.Order, error) {
+	rows, err := s.db.Query(`
+		SELECT id, user_id, plan_id, amount_cents, currency, status, provider, created_at, paid_at
+		FROM orders ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list orders: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.Order
+	for rows.Next() {
+		o, err := scanOrder(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// GetOrder returns the order with the given id, or ErrNotFound.
+func (s *SQLiteStore) GetOrder(id string) (model.Order, error) {
+	row := s.db.QueryRow(`
+		SELECT id, user_id, plan_id, amount_cents, currency, status, provider, created_at, paid_at
+		FROM orders WHERE id = ?`, id)
+
+	o, err := scanOrder(row)
+	if err == sql.ErrNoRows {
+		return model.Order{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Order{}, fmt.Errorf("get order: %w", err)
+	}
+	return o, nil
+}
+
+// CreateOrder inserts a new order.
+func (s *SQLiteStore) CreateOrder(o model.Order) error {
+	_, err := s.db.Exec(`
+		INSERT INTO orders (id, user_id, plan_id, amount_cents, currency, status, provider, created_at, paid_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		o.ID, o.UserID, o.PlanID, o.AmountCents, o.Currency, o.Status, o.Provider, o.CreatedAt, nullTime(o.PaidAt))
+	if err != nil {
+		return fmt.Errorf("create order: %w", err)
+	}
+	return nil
+}
+
+// UpdateOrder persists changes to an existing order (or ErrNotFound).
+func (s *SQLiteStore) UpdateOrder(o model.Order) error {
+	res, err := s.db.Exec(`
+		UPDATE orders SET status = ?, provider = ?, paid_at = ? WHERE id = ?`,
+		o.Status, o.Provider, nullTime(o.PaidAt), o.ID)
+	if err != nil {
+		return fmt.Errorf("update order: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // scanner is satisfied by both *sql.Row and *sql.Rows, so scanUser works
 // for single-row and multi-row queries alike.
 type scanner interface {
 	Scan(dest ...any) error
+}
+
+// scanPlan reads one plan row.
+func scanPlan(sc scanner) (model.Plan, error) {
+	var p model.Plan
+	if err := sc.Scan(&p.ID, &p.Name, &p.PriceCents, &p.Currency, &p.DurationDays, &p.DataLimit, &p.CreatedAt); err != nil {
+		return model.Plan{}, err
+	}
+	return p, nil
+}
+
+// scanOrder reads one order row, translating the nullable paid_at column.
+func scanOrder(sc scanner) (model.Order, error) {
+	var (
+		o    model.Order
+		paid sql.NullTime
+	)
+	if err := sc.Scan(&o.ID, &o.UserID, &o.PlanID, &o.AmountCents, &o.Currency, &o.Status, &o.Provider, &o.CreatedAt, &paid); err != nil {
+		return model.Order{}, err
+	}
+	if paid.Valid {
+		o.PaidAt = &paid.Time
+	}
+	return o, nil
 }
 
 // scanNode reads one node row.

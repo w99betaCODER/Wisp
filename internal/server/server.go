@@ -46,6 +46,14 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/nodes/{id}", s.handleGetNode)
 	mux.HandleFunc("DELETE /api/nodes/{id}", s.handleDeleteNode)
 
+	mux.HandleFunc("GET /api/plans", s.handleListPlans)
+	mux.HandleFunc("POST /api/plans", s.handleCreatePlan)
+	mux.HandleFunc("DELETE /api/plans/{id}", s.handleDeletePlan)
+
+	mux.HandleFunc("GET /api/orders", s.handleListOrders)
+	mux.HandleFunc("POST /api/orders", s.handleCreateOrder)
+	mux.HandleFunc("POST /api/orders/{id}/pay", s.handlePayOrder)
+
 	// Subscription link consumed directly by VPN clients.
 	mux.HandleFunc("GET /sub/{id}", s.handleSubscription)
 

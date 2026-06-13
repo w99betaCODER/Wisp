@@ -44,6 +44,33 @@
       </div>
     </section>
 
+    <!-- Plans -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Plans</h2>
+        <button class="btn" onclick="toggle('plan-form')">+ Add plan</button>
+      </div>
+
+      <form id="plan-form" class="form hidden" onsubmit="createPlan(event)">
+        <input name="name" placeholder="name (e.g. 1 month · 100 GB)" required />
+        <input name="price" type="number" min="0" step="0.01" placeholder="price" required />
+        <input name="currency" placeholder="USD" value="USD" maxlength="3" style="max-width:80px" />
+        <input name="days" type="number" min="1" placeholder="days" required />
+        <input name="limit_gb" type="number" min="0" step="0.1" placeholder="limit, GB (0 = ∞)" />
+        <button class="btn primary" type="submit">Create</button>
+      </form>
+
+      <div class="table-wrap">
+        <table id="plans">
+          <thead>
+            <tr><th>Name</th><th>Price</th><th>Duration</th><th>Data</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="plans-empty">No plans yet — add one to start selling.</p>
+      </div>
+    </section>
+
     <!-- Nodes -->
     <section class="card">
       <div class="card-head">
