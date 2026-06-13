@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/w99betaCODER/Wisp/internal/nodeclient"
@@ -23,55 +24,26 @@ func New(st store.Store, tlsCfg *tls.Config) *Cluster {
 	return &Cluster{store: st, tls: tlsCfg, timeout: 10 * time.Second}
 }
 
-// AddUser pushes the user to every enabled node.
-//
-// It is best-effort by design: a node that is down or returns an error is
-// logged, not propagated, so a single unhealthy node never blocks a user
-// operation. Reconciling any resulting drift is a separate concern (a future
-// sync loop), kept out of the request path on purpose.
-func (c *Cluster) AddUser(ctx context.Context, email, uuid, flow string) {
-	c.each(ctx, "add user "+email, func(ctx context.Context, nc *nodeclient.Client) error {
+// AddUser pushes the user to every enabled node, concurrently and in the
+// background. It returns immediately: the DB and local Xray are authoritative,
+// so a slow or unreachable node must never block the request. Per-node failures
+// are logged; drift is reconciled by the enforcer's periodic re-sync.
+func (c *Cluster) AddUser(email, uuid, flow string) {
+	c.dispatch("add user "+email, func(ctx context.Context, nc *nodeclient.Client) error {
 		return nc.AddUser(ctx, email, uuid, flow)
 	})
 }
 
-// RemoveUser drops the user from every enabled node (best-effort).
-func (c *Cluster) RemoveUser(ctx context.Context, email string) {
-	c.each(ctx, "remove user "+email, func(ctx context.Context, nc *nodeclient.Client) error {
+// RemoveUser drops the user from every enabled node (background, best-effort).
+func (c *Cluster) RemoveUser(email string) {
+	c.dispatch("remove user "+email, func(ctx context.Context, nc *nodeclient.Client) error {
 		return nc.RemoveUser(ctx, email)
 	})
 }
 
-// CollectStats polls every enabled node for per-user traffic deltas and sums
-// them by email. A node that errors is logged and skipped.
-func (c *Cluster) CollectStats(ctx context.Context) map[string]int64 {
-	total := make(map[string]int64)
-	nodes, err := c.store.ListNodes()
-	if err != nil {
-		log.Printf("cluster: list nodes: %v", err)
-		return total
-	}
-	for _, n := range nodes {
-		if !n.Enabled {
-			continue
-		}
-		nc := nodeclient.New(n.Address, c.tls, c.timeout)
-		cctx, cancel := context.WithTimeout(ctx, c.timeout)
-		stats, err := nc.Stats(cctx)
-		cancel()
-		if err != nil {
-			log.Printf("cluster: node %q (%s): stats: %v", n.Name, n.Address, err)
-			continue
-		}
-		for email, bytes := range stats {
-			total[email] += bytes
-		}
-	}
-	return total
-}
-
-// each runs fn against every enabled node, logging per-node failures.
-func (c *Cluster) each(ctx context.Context, what string, fn func(context.Context, *nodeclient.Client) error) {
+// dispatch runs fn against every enabled node in its own goroutine and returns
+// at once. Each call gets a fresh, detached context bounded by the timeout.
+func (c *Cluster) dispatch(what string, fn func(context.Context, *nodeclient.Client) error) {
 	nodes, err := c.store.ListNodes()
 	if err != nil {
 		log.Printf("cluster: list nodes: %v", err)
@@ -81,11 +53,54 @@ func (c *Cluster) each(ctx context.Context, what string, fn func(context.Context
 		if !n.Enabled {
 			continue
 		}
-		nc := nodeclient.New(n.Address, c.tls, c.timeout)
-		cctx, cancel := context.WithTimeout(ctx, c.timeout)
-		if err := fn(cctx, nc); err != nil {
-			log.Printf("cluster: node %q (%s): %s: %v", n.Name, n.Address, what, err)
-		}
-		cancel()
+		n := n
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+			defer cancel()
+			nc := nodeclient.New(n.Address, c.tls, c.timeout)
+			if err := fn(ctx, nc); err != nil {
+				log.Printf("cluster: node %q (%s): %s: %v", n.Name, n.Address, what, err)
+			}
+		}()
 	}
+}
+
+// CollectStats polls every enabled node for per-user traffic deltas (in
+// parallel) and sums them by email. A node that errors is logged and skipped.
+func (c *Cluster) CollectStats(ctx context.Context) map[string]int64 {
+	total := make(map[string]int64)
+	nodes, err := c.store.ListNodes()
+	if err != nil {
+		log.Printf("cluster: list nodes: %v", err)
+		return total
+	}
+
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
+	for _, n := range nodes {
+		if !n.Enabled {
+			continue
+		}
+		n := n
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cctx, cancel := context.WithTimeout(ctx, c.timeout)
+			defer cancel()
+			stats, err := nodeclient.New(n.Address, c.tls, c.timeout).Stats(cctx)
+			if err != nil {
+				log.Printf("cluster: node %q (%s): stats: %v", n.Name, n.Address, err)
+				return
+			}
+			mu.Lock()
+			for email, bytes := range stats {
+				total[email] += bytes
+			}
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return total
 }

@@ -53,6 +53,33 @@ func TestVLESSLink(t *testing.T) {
 	}
 }
 
+func TestLink_PerProtocol(t *testing.T) {
+	u := model.User{UUID: "uuid-1", Email: "alice"}
+	node := func(proto string) model.Node {
+		return model.Node{Protocol: proto, PublicHost: "vpn.example.com", PublicPort: 443}
+	}
+	r := testNode()
+
+	if l := Link(u, node("vless"), r); !strings.HasPrefix(l, "vless://uuid-1@vpn.example.com:443?") {
+		t.Fatalf("vless link: %s", l)
+	}
+	if l := Link(u, node("trojan"), r); !strings.HasPrefix(l, "trojan://uuid-1@vpn.example.com:443?") {
+		t.Fatalf("trojan link: %s", l)
+	}
+
+	vmess := Link(u, node("vmess"), r)
+	if !strings.HasPrefix(vmess, "vmess://") {
+		t.Fatalf("vmess prefix: %s", vmess)
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(vmess, "vmess://"))
+	if err != nil {
+		t.Fatalf("vmess base64: %v", err)
+	}
+	if !strings.Contains(string(raw), `"id":"uuid-1"`) {
+		t.Fatalf("vmess json missing id: %s", raw)
+	}
+}
+
 func TestEncode(t *testing.T) {
 	links := []string{"vless://a", "vless://b"}
 	enc := Encode(links)

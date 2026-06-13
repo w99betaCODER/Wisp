@@ -26,13 +26,14 @@ type Client interface {
 }
 
 // New returns a gRPC-backed Client when apiAddr is set (host:port of the Xray
-// API), or a NoopClient when it is empty. Both the panel and the node agent
-// use this so the "no Xray configured" behaviour is identical everywhere.
-func New(apiAddr string) (Client, error) {
+// API), or a NoopClient when it is empty. protocol selects the account type
+// added to the inbound ("vless", "vmess" or "trojan"). Both the panel and the
+// node agent use this so behaviour is identical everywhere.
+func New(apiAddr, protocol string) (Client, error) {
 	if apiAddr == "" {
 		return NewNoopClient(), nil
 	}
-	return Dial(apiAddr)
+	return Dial(apiAddr, protocol)
 }
 
 // NoopClient satisfies Client without contacting Xray. It logs what it would

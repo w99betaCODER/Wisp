@@ -24,6 +24,7 @@ No Python virtualenvs, no `node_modules` on your server — just one binary.
 | | 3x-ui | Marzban | **Wisp** |
 |---|:---:|:---:|:---:|
 | Multi-node | ❌ | ✅ | ✅ |
+| VLESS / VMess / Trojan | ✅ | ✅ | ✅ |
 | Single binary deploy | ❌ | ❌ | ✅ |
 | Traffic quota & expiry | ✅ | ✅ | ✅ |
 | Clean, modern UI | ⚠️ | ⚠️ | ✅ |
@@ -40,7 +41,8 @@ powerful enough to run a real VPN business.
 > integration (VLESS + Reality), base64 subscription links, **multi-node** (a
 > panel driving any number of node agents over mTLS), **traffic accounting**
 > with automatic disable on quota or expiry, **billing** (plans, orders,
-> apply-on-payment), and an **embedded web dashboard**.
+> apply-on-payment), **multiprotocol** (per-node VLESS / VMess / Trojan), and
+> an **embedded web dashboard**.
 
 ## Quick start
 
@@ -79,7 +81,7 @@ curl http://localhost:8080/api/users
 | `DELETE` | `/api/users/{id}` | Delete a user |
 | `POST` | `/api/users/{id}/reset` | Reset traffic to 0 and re-enable the user |
 | `GET` | `/api/nodes` | List registered nodes |
-| `POST` | `/api/nodes` | Register a node (`{"name": "...", "address": "host:port"}`) |
+| `POST` | `/api/nodes` | Register a node (`{"name","address","protocol","public_host","public_port"}`) |
 | `GET` | `/api/nodes/{id}` | Get one node |
 | `DELETE` | `/api/nodes/{id}` | Remove a node |
 | `GET` | `/api/plans` | List plans |
@@ -108,6 +110,7 @@ All settings come from environment variables (sensible defaults shown):
 | `WISP_DB` | `wisp.db` | SQLite database file (`:memory:` for ephemeral) |
 | `WISP_XRAY_API` | _(empty)_ | Xray gRPC API `host:port`. Empty → no-op client (users stored but not pushed to Xray) |
 | `WISP_INBOUND_TAG` | `vless-reality` | Tag of the Xray inbound users are added to |
+| `WISP_PROTOCOL` | `vless` | Local-Xray account type: `vless`, `vmess` or `trojan` (per-node protocol is set on each node) |
 | `WISP_NODE_HOST` | `127.0.0.1` | Public host/IP clients dial |
 | `WISP_NODE_PORT` | `443` | Public port |
 | `WISP_NODE_FLOW` | `xtls-rprx-vision` | VLESS flow |
@@ -134,6 +137,7 @@ The **node agent** (`cmd/node`) reads its own variables:
 | `WISP_AGENT_LISTEN` | `:8443` | Agent listen address |
 | `WISP_XRAY_API` | _(empty)_ | Local Xray gRPC API `host:port` |
 | `WISP_INBOUND_TAG` | `vless-reality` | Xray inbound tag |
+| `WISP_PROTOCOL` | `vless` | This node's protocol: `vless`, `vmess` or `trojan` |
 | `WISP_TLS_CERT` | _(empty)_ | Agent server cert. Empty → plain HTTP (dev only) |
 | `WISP_TLS_KEY` | _(empty)_ | Agent server key |
 | `WISP_TLS_CLIENT_CA` | _(empty)_ | CA that verifies the panel's client cert |
@@ -240,7 +244,8 @@ See [`internal/`](internal/) for the package layout and [`cmd/`](cmd/) for the
 - [x] **Phase 3** — Traffic accounting, quota & expiry, auto-disable
 - [x] **Web dashboard** — embedded single-page admin UI (zero build step)
 - [x] **Phase 4** — Billing: plans, orders, apply-on-payment
-- [x] **Auth & white-label** — API-token login, brandable name/accent, HMAC payment webhooks
+- [x] **Auth & white-label** — username/password login, brandable name/accent, HMAC payment webhooks
+- [x] **Phase 6** — Multiprotocol: per-node VLESS / VMess / Trojan, protocol-aware subscription links
 - [ ] **Phase 5** — Multi-tenant resellers, recurring auto-renewal
 
 ## Development

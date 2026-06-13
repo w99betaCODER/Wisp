@@ -24,6 +24,10 @@ type Config struct {
 	// InboundTag is the tag of the Xray inbound that users are added to.
 	InboundTag string
 
+	// Protocol is the inbound's account type for the panel's local Xray:
+	// "vless", "vmess" or "trojan". Per-node protocols are set on each node.
+	Protocol string
+
 	// Node describes how clients reach the VPN node; used to build the
 	// vless:// subscription links.
 	Node NodeConfig
@@ -80,6 +84,7 @@ func Load() Config {
 		DBPath:      env("WISP_DB", "wisp.db"),
 		XrayAPIAddr: env("WISP_XRAY_API", ""),
 		InboundTag:  env("WISP_INBOUND_TAG", "vless-reality"),
+		Protocol:    env("WISP_PROTOCOL", "vless"),
 		Node: NodeConfig{
 			Host:        env("WISP_NODE_HOST", "127.0.0.1"),
 			Port:        envInt("WISP_NODE_PORT", 443),

@@ -163,6 +163,7 @@ function renderNodes(nodes) {
   tb.innerHTML = nodes.map((n) => `
     <tr>
       <td>${esc(n.name)}</td>
+      <td><span class="badge proto">${esc(n.protocol || "vless")}</span></td>
       <td class="mono">${esc(n.address)}</td>
       <td><span class="badge ${n.enabled ? "on" : "off"}">${n.enabled ? "enabled" : "disabled"}</span></td>
       <td><div class="row-actions">
@@ -236,6 +237,24 @@ async function createPlan(ev) {
     await api("POST", "/api/plans", body);
     f.reset(); f.currency.value = "USD"; toggle("plan-form");
     toast("Plan created");
+    load();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function createNode(ev) {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    name: f.name.value.trim(),
+    address: f.address.value.trim(),
+    protocol: f.protocol.value,
+  };
+  if (f.public_host.value.trim()) body.public_host = f.public_host.value.trim();
+  if (f.public_port.value) body.public_port = parseInt(f.public_port.value, 10);
+  try {
+    await api("POST", "/api/nodes", body);
+    f.reset(); toggle("node-form");
+    toast("Node registered");
     load();
   } catch (e) { toast(e.message, true); }
 }

@@ -23,12 +23,13 @@ func main() {
 		listen     = env("WISP_AGENT_LISTEN", ":8443")
 		xrayAPI    = env("WISP_XRAY_API", "")
 		inboundTag = env("WISP_INBOUND_TAG", "vless-reality")
+		protocol   = env("WISP_PROTOCOL", "vless")
 		tlsCert    = env("WISP_TLS_CERT", "")
 		tlsKey     = env("WISP_TLS_KEY", "")
 		clientCA   = env("WISP_TLS_CLIENT_CA", "")
 	)
 
-	xc, err := xray.New(xrayAPI)
+	xc, err := xray.New(xrayAPI, protocol)
 	if err != nil {
 		log.Fatalf("connect to xray: %v", err)
 	}

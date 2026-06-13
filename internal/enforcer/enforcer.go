@@ -119,6 +119,6 @@ func (e *Enforcer) disable(ctx context.Context, u model.User, reason string) {
 	if err := e.xray.RemoveUser(ctx, e.cfg.InboundTag, u.Email); err != nil {
 		log.Printf("enforcer: local remove %q: %v", u.Email, err)
 	}
-	e.cluster.RemoveUser(ctx, u.Email)
+	e.cluster.RemoveUser(u.Email)
 	log.Printf("enforcer: disabled %q (%s)", u.Email, reason)
 }

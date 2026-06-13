@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"time"
 
@@ -23,8 +24,11 @@ func (s *Server) handleListNodes(w http.ResponseWriter, r *http.Request) {
 
 // createNodeRequest is the JSON body accepted by POST /api/nodes.
 type createNodeRequest struct {
-	Name    string `json:"name"`
-	Address string `json:"address"`
+	Name       string `json:"name"`
+	Address    string `json:"address"`
+	Protocol   string `json:"protocol"`
+	PublicHost string `json:"public_host"`
+	PublicPort int    `json:"public_port"`
 }
 
 // handleCreateNode registers a new node agent.
@@ -38,13 +42,34 @@ func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and address are required")
 		return
 	}
+	switch req.Protocol {
+	case "", "vless":
+		req.Protocol = "vless"
+	case "vmess", "trojan":
+	default:
+		writeError(w, http.StatusBadRequest, "protocol must be vless, vmess or trojan")
+		return
+	}
+	if req.PublicPort == 0 {
+		req.PublicPort = 443
+	}
+	if req.PublicHost == "" {
+		// Default the VPN host to the agent host (strip the agent port).
+		req.PublicHost = req.Address
+		if h, _, err := net.SplitHostPort(req.Address); err == nil {
+			req.PublicHost = h
+		}
+	}
 
 	node := model.Node{
-		ID:        util.NewID(),
-		Name:      req.Name,
-		Address:   req.Address,
-		Enabled:   true,
-		CreatedAt: time.Now().UTC(),
+		ID:         util.NewID(),
+		Name:       req.Name,
+		Address:    req.Address,
+		Protocol:   req.Protocol,
+		PublicHost: req.PublicHost,
+		PublicPort: req.PublicPort,
+		Enabled:    true,
+		CreatedAt:  time.Now().UTC(),
 	}
 	if err := s.store.CreateNode(node); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create node")

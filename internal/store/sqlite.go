@@ -54,11 +54,14 @@ CREATE TABLE IF NOT EXISTS users (
     expires_at TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS nodes (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    address    TEXT NOT NULL,
-    enabled    INTEGER NOT NULL DEFAULT 1,
-    created_at TIMESTAMP NOT NULL
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    address     TEXT NOT NULL,
+    protocol    TEXT NOT NULL DEFAULT 'vless',
+    public_host TEXT NOT NULL DEFAULT '',
+    public_port INTEGER NOT NULL DEFAULT 443,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TIMESTAMP NOT NULL
 );
 CREATE TABLE IF NOT EXISTS plans (
     id            TEXT PRIMARY KEY,
@@ -90,6 +93,9 @@ CREATE TABLE IF NOT EXISTS orders (
 	for _, ddl := range []string{
 		`ALTER TABLE users ADD COLUMN data_limit INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE users ADD COLUMN used INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE nodes ADD COLUMN protocol TEXT NOT NULL DEFAULT 'vless'`,
+		`ALTER TABLE nodes ADD COLUMN public_host TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE nodes ADD COLUMN public_port INTEGER NOT NULL DEFAULT 443`,
 	} {
 		if _, err := s.db.Exec(ddl); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			return fmt.Errorf("migrate: %w", err)
@@ -186,7 +192,7 @@ func (s *SQLiteStore) DeleteUser(id string) error {
 // ListNodes returns all nodes ordered by creation time (oldest first).
 func (s *SQLiteStore) ListNodes() ([]model.Node, error) {
 	rows, err := s.db.Query(`
-		SELECT id, name, address, enabled, created_at
+		SELECT id, name, address, protocol, public_host, public_port, enabled, created_at
 		FROM nodes ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list nodes: %w", err)
@@ -207,7 +213,7 @@ func (s *SQLiteStore) ListNodes() ([]model.Node, error) {
 // GetNode returns the node with the given id, or ErrNotFound.
 func (s *SQLiteStore) GetNode(id string) (model.Node, error) {
 	row := s.db.QueryRow(`
-		SELECT id, name, address, enabled, created_at
+		SELECT id, name, address, protocol, public_host, public_port, enabled, created_at
 		FROM nodes WHERE id = ?`, id)
 
 	n, err := scanNode(row)
@@ -223,9 +229,9 @@ func (s *SQLiteStore) GetNode(id string) (model.Node, error) {
 // CreateNode inserts a new node.
 func (s *SQLiteStore) CreateNode(n model.Node) error {
 	_, err := s.db.Exec(`
-		INSERT INTO nodes (id, name, address, enabled, created_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		n.ID, n.Name, n.Address, n.Enabled, n.CreatedAt)
+		INSERT INTO nodes (id, name, address, protocol, public_host, public_port, enabled, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		n.ID, n.Name, n.Address, n.Protocol, n.PublicHost, n.PublicPort, n.Enabled, n.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create node: %w", err)
 	}
@@ -413,7 +419,7 @@ func scanOrder(sc scanner) (model.Order, error) {
 // scanNode reads one node row.
 func scanNode(sc scanner) (model.Node, error) {
 	var n model.Node
-	if err := sc.Scan(&n.ID, &n.Name, &n.Address, &n.Enabled, &n.CreatedAt); err != nil {
+	if err := sc.Scan(&n.ID, &n.Name, &n.Address, &n.Protocol, &n.PublicHost, &n.PublicPort, &n.Enabled, &n.CreatedAt); err != nil {
 		return model.Node{}, err
 	}
 	return n, nil

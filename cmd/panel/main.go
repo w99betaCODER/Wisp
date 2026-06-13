@@ -101,10 +101,10 @@ func newXrayClient(cfg config.Config) xray.Client {
 		log.Println("WISP_XRAY_API not set — using no-op Xray client (users are stored but not pushed to Xray)")
 		return xray.NewNoopClient()
 	}
-	gc, err := xray.Dial(cfg.XrayAPIAddr)
+	gc, err := xray.Dial(cfg.XrayAPIAddr, cfg.Protocol)
 	if err != nil {
 		log.Fatalf("connect to xray: %v", err)
 	}
-	log.Printf("connected to xray API at %s", cfg.XrayAPIAddr)
+	log.Printf("connected to xray API at %s (protocol %s)", cfg.XrayAPIAddr, cfg.Protocol)
 	return gc
 }

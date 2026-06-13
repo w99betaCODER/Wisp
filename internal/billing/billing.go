@@ -53,7 +53,7 @@ func Apply(ctx context.Context, st store.Store, xc xray.Client, cl *cluster.Clus
 		if err := xc.AddUser(ctx, cfg.InboundTag, user.Email, user.UUID, cfg.Node.Flow); err != nil {
 			log.Printf("billing: local xray add %q: %v", user.Email, err)
 		}
-		cl.AddUser(ctx, user.Email, user.UUID, cfg.Node.Flow)
+		cl.AddUser(user.Email, user.UUID, cfg.Node.Flow)
 	}
 	log.Printf("billing: applied plan %q to %q (until %s)", plan.Name, user.Email, expiry.Format(time.DateOnly))
 	return nil

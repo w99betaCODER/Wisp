@@ -70,8 +70,8 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fan the new user out to every enabled node (best-effort).
-	s.cluster.AddUser(r.Context(), user.Email, user.UUID, s.cfg.Node.Flow)
+	// Fan the new user out to every enabled node (background, best-effort).
+	s.cluster.AddUser(user.Email, user.UUID, s.cfg.Node.Flow)
 
 	writeJSON(w, http.StatusCreated, user)
 }
@@ -117,8 +117,8 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		log.Printf("delete user: xray remove failed: %v", err)
 	}
 
-	// Remove from every enabled node too (best-effort).
-	s.cluster.RemoveUser(r.Context(), user.Email)
+	// Remove from every enabled node too (background, best-effort).
+	s.cluster.RemoveUser(user.Email)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -152,7 +152,7 @@ func (s *Server) handleResetUser(w http.ResponseWriter, r *http.Request) {
 		if err := s.xray.AddUser(r.Context(), s.cfg.InboundTag, user.Email, user.UUID, s.cfg.Node.Flow); err != nil {
 			log.Printf("reset user: local xray add failed: %v", err)
 		}
-		s.cluster.AddUser(r.Context(), user.Email, user.UUID, s.cfg.Node.Flow)
+		s.cluster.AddUser(user.Email, user.UUID, s.cfg.Node.Flow)
 	}
 	writeJSON(w, http.StatusOK, user)
 }
@@ -174,8 +174,23 @@ func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	link := subscription.VLESSLink(user, s.cfg.Node)
-	content := subscription.Encode([]string{link})
+	// One link per enabled node, in that node's protocol. With no nodes
+	// registered, fall back to the panel's local (single-server) config.
+	nodes, err := s.store.ListNodes()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load nodes")
+		return
+	}
+	var links []string
+	for _, n := range nodes {
+		if n.Enabled {
+			links = append(links, subscription.Link(user, n, s.cfg.Node))
+		}
+	}
+	if len(links) == 0 {
+		links = append(links, subscription.VLESSLink(user, s.cfg.Node))
+	}
+	content := subscription.Encode(links)
 
 	// Plain text + headers that clients read for the profile name.
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
