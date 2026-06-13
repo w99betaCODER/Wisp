@@ -37,6 +37,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/users", s.handleCreateUser)
 	mux.HandleFunc("GET /api/users/{id}", s.handleGetUser)
 	mux.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
+	mux.HandleFunc("POST /api/users/{id}/reset", s.handleResetUser)
 
 	mux.HandleFunc("GET /api/nodes", s.handleListNodes)
 	mux.HandleFunc("POST /api/nodes", s.handleCreateNode)

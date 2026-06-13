@@ -18,6 +18,7 @@ import (
 
 	"github.com/w99betaCODER/Wisp/internal/cluster"
 	"github.com/w99betaCODER/Wisp/internal/config"
+	"github.com/w99betaCODER/Wisp/internal/enforcer"
 	"github.com/w99betaCODER/Wisp/internal/mtls"
 	"github.com/w99betaCODER/Wisp/internal/server"
 	"github.com/w99betaCODER/Wisp/internal/store"
@@ -55,6 +56,12 @@ func main() {
 		log.Println("WISP_NODE_TLS_CERT not set — talking to nodes over plain HTTP (dev only)")
 	}
 	cl := cluster.New(st, clusterTLS)
+
+	// Start the background enforcer: it accounts traffic and disables users
+	// that exceed their quota or expire. It stops when enfCancel is called.
+	enfCtx, enfCancel := context.WithCancel(context.Background())
+	defer enfCancel()
+	go enforcer.New(st, xc, cl, cfg).Run(enfCtx)
 
 	srv := server.New(cfg, st, xc, cl)
 

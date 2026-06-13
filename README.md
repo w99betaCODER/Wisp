@@ -29,9 +29,9 @@ powerful enough to run a real VPN business.
 ## Status
 
 > ⚠️ **Early development.** Working today: SQLite persistence, Xray gRPC
-> integration (VLESS + Reality), base64 subscription links, and **multi-node**
-> — a panel driving any number of node agents over mTLS. Traffic limits and
-> billing are next on the roadmap below.
+> integration (VLESS + Reality), base64 subscription links, **multi-node** (a
+> panel driving any number of node agents over mTLS), and **traffic accounting**
+> with automatic disable on quota or expiry. Billing is next on the roadmap.
 
 ## Quick start
 
@@ -50,10 +50,10 @@ Try the API:
 # health check
 curl http://localhost:8080/healthz
 
-# create a user
+# create a user (data_limit in bytes and expires_at are optional)
 curl -X POST http://localhost:8080/api/users \
   -H 'Content-Type: application/json' \
-  -d '{"email":"alice@vpn"}'
+  -d '{"email":"alice@vpn","data_limit":107374182400,"expires_at":"2026-12-31T23:59:59Z"}'
 
 # list users
 curl http://localhost:8080/api/users
@@ -65,9 +65,10 @@ curl http://localhost:8080/api/users
 |---|---|---|
 | `GET` | `/healthz` | Liveness probe |
 | `GET` | `/api/users` | List all users |
-| `POST` | `/api/users` | Create a user (`{"email": "..."}`) |
+| `POST` | `/api/users` | Create a user (`{"email", "data_limit"?, "expires_at"?}`) |
 | `GET` | `/api/users/{id}` | Get one user |
 | `DELETE` | `/api/users/{id}` | Delete a user |
+| `POST` | `/api/users/{id}/reset` | Reset traffic to 0 and re-enable the user |
 | `GET` | `/api/nodes` | List registered nodes |
 | `POST` | `/api/nodes` | Register a node (`{"name": "...", "address": "host:port"}`) |
 | `GET` | `/api/nodes/{id}` | Get one node |
@@ -94,6 +95,7 @@ All settings come from environment variables (sensible defaults shown):
 | `WISP_NODE_TLS_CERT` | _(empty)_ | Panel mTLS client cert. Empty → talk to nodes over plain HTTP (dev only) |
 | `WISP_NODE_TLS_KEY` | _(empty)_ | Panel mTLS client key |
 | `WISP_NODE_TLS_CA` | _(empty)_ | CA that verifies node server certs |
+| `WISP_ENFORCE_INTERVAL` | `60` | Seconds between traffic-accounting + quota/expiry sweeps |
 
 The **node agent** (`cmd/node`) reads its own variables:
 
@@ -165,7 +167,7 @@ See [`internal/`](internal/) for the package layout and [`cmd/`](cmd/) for the
 - [x] **Phase 0** — Control-plane skeleton: HTTP API, user CRUD, in-memory store
 - [x] **Phase 1** — SQLite persistence + Xray gRPC integration (VLESS + Reality), subscription links
 - [x] **Phase 2** — Multi-node: node agent, mTLS, user distribution
-- [ ] **Phase 3** — Traffic limits & expiry, auto-disable
+- [x] **Phase 3** — Traffic accounting, quota & expiry, auto-disable
 - [ ] **Phase 4** — Billing: plans, payments, auto-renewal
 - [ ] **Phase 5** — White-label / resellers, web UI
 

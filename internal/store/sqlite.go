@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/w99betaCODER/Wisp/internal/model"
@@ -47,6 +48,8 @@ CREATE TABLE IF NOT EXISTS users (
     email      TEXT NOT NULL UNIQUE,
     uuid       TEXT NOT NULL,
     enabled    INTEGER NOT NULL DEFAULT 1,
+    data_limit INTEGER NOT NULL DEFAULT 0,
+    used       INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL,
     expires_at TIMESTAMP
 );
@@ -60,13 +63,25 @@ CREATE TABLE IF NOT EXISTS nodes (
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
+
+	// Idempotent column additions for databases created before these columns
+	// existed. On a fresh DB the columns are already present, so SQLite reports
+	// "duplicate column name", which we deliberately ignore.
+	for _, ddl := range []string{
+		`ALTER TABLE users ADD COLUMN data_limit INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN used INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, err := s.db.Exec(ddl); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("migrate: %w", err)
+		}
+	}
 	return nil
 }
 
 // ListUsers returns all users ordered by creation time (oldest first).
 func (s *SQLiteStore) ListUsers() ([]model.User, error) {
 	rows, err := s.db.Query(`
-		SELECT id, email, uuid, enabled, created_at, expires_at
+		SELECT id, email, uuid, enabled, data_limit, used, created_at, expires_at
 		FROM users ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
@@ -87,7 +102,7 @@ func (s *SQLiteStore) ListUsers() ([]model.User, error) {
 // GetUser returns the user with the given id, or ErrNotFound.
 func (s *SQLiteStore) GetUser(id string) (model.User, error) {
 	row := s.db.QueryRow(`
-		SELECT id, email, uuid, enabled, created_at, expires_at
+		SELECT id, email, uuid, enabled, data_limit, used, created_at, expires_at
 		FROM users WHERE id = ?`, id)
 
 	u, err := scanUser(row)
@@ -103,11 +118,31 @@ func (s *SQLiteStore) GetUser(id string) (model.User, error) {
 // CreateUser inserts a new user.
 func (s *SQLiteStore) CreateUser(u model.User) error {
 	_, err := s.db.Exec(`
-		INSERT INTO users (id, email, uuid, enabled, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		u.ID, u.Email, u.UUID, u.Enabled, u.CreatedAt, nullTime(u.ExpiresAt))
+		INSERT INTO users (id, email, uuid, enabled, data_limit, used, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		u.ID, u.Email, u.UUID, u.Enabled, u.DataLimit, u.Used, u.CreatedAt, nullTime(u.ExpiresAt))
 	if err != nil {
 		return fmt.Errorf("create user: %w", err)
+	}
+	return nil
+}
+
+// UpdateUser persists changes to an existing user (or ErrNotFound).
+func (s *SQLiteStore) UpdateUser(u model.User) error {
+	res, err := s.db.Exec(`
+		UPDATE users
+		SET email = ?, uuid = ?, enabled = ?, data_limit = ?, used = ?, expires_at = ?
+		WHERE id = ?`,
+		u.Email, u.UUID, u.Enabled, u.DataLimit, u.Used, nullTime(u.ExpiresAt), u.ID)
+	if err != nil {
+		return fmt.Errorf("update user: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -214,7 +249,7 @@ func scanUser(sc scanner) (model.User, error) {
 		u       model.User
 		expires sql.NullTime
 	)
-	if err := sc.Scan(&u.ID, &u.Email, &u.UUID, &u.Enabled, &u.CreatedAt, &expires); err != nil {
+	if err := sc.Scan(&u.ID, &u.Email, &u.UUID, &u.Enabled, &u.DataLimit, &u.Used, &u.CreatedAt, &expires); err != nil {
 		return model.User{}, err
 	}
 	if expires.Valid {

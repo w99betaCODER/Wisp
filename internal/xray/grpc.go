@@ -3,8 +3,10 @@ package xray
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/xtls/xray-core/app/proxyman/command"
+	statscmd "github.com/xtls/xray-core/app/stats/command"
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/proxy/vless"
@@ -19,6 +21,7 @@ import (
 type GRPCClient struct {
 	conn    *grpc.ClientConn
 	handler command.HandlerServiceClient
+	stats   statscmd.StatsServiceClient
 }
 
 // compile-time check that *GRPCClient satisfies the Client interface.
@@ -35,6 +38,7 @@ func Dial(addr string) (*GRPCClient, error) {
 	return &GRPCClient{
 		conn:    conn,
 		handler: command.NewHandlerServiceClient(conn),
+		stats:   statscmd.NewStatsServiceClient(conn),
 	}, nil
 }
 
@@ -72,6 +76,36 @@ func (c *GRPCClient) RemoveUser(ctx context.Context, inboundTag, email string) e
 		return fmt.Errorf("xray remove user %q: %w", email, err)
 	}
 	return nil
+}
+
+// Stats returns per-user traffic in bytes (uplink+downlink summed), keyed by
+// email. Xray exposes counters named "user>>>EMAIL>>>traffic>>>uplink" and
+// "...>>>downlink"; we query them all and fold them per user.
+func (c *GRPCClient) Stats(ctx context.Context, reset bool) (map[string]int64, error) {
+	resp, err := c.stats.QueryStats(ctx, &statscmd.QueryStatsRequest{
+		Pattern: "user>>>",
+		Reset_:  reset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("xray query stats: %w", err)
+	}
+	out := make(map[string]int64)
+	for _, st := range resp.GetStat() {
+		if email := statEmail(st.GetName()); email != "" {
+			out[email] += st.GetValue()
+		}
+	}
+	return out, nil
+}
+
+// statEmail extracts the email from a counter name of the form
+// "user>>>EMAIL>>>traffic>>>uplink", or returns "" if it doesn't match.
+func statEmail(name string) string {
+	parts := strings.Split(name, ">>>")
+	if len(parts) >= 2 && parts[0] == "user" {
+		return parts[1]
+	}
+	return ""
 }
 
 // Close closes the underlying gRPC connection.

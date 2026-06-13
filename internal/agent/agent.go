@@ -28,6 +28,7 @@ func (a *Agent) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", a.handleHealth)
 	mux.HandleFunc("POST /v1/users", a.handleAddUser)
 	mux.HandleFunc("DELETE /v1/users/{email}", a.handleRemoveUser)
+	mux.HandleFunc("GET /v1/stats", a.handleStats)
 	return mux
 }
 
@@ -68,6 +69,18 @@ func (a *Agent) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleStats returns per-user traffic deltas since the previous call (Xray's
+// counters are reset on read) as a JSON map of email -> bytes.
+func (a *Agent) handleStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := a.xray.Stats(r.Context(), true)
+	if err != nil {
+		log.Printf("agent: stats: %v", err)
+		writeError(w, http.StatusBadGateway, "xray stats failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // writeJSON / writeError are small local responders; the agent is a separate

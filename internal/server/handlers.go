@@ -30,7 +30,9 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 
 // createUserRequest is the JSON body accepted by POST /api/users.
 type createUserRequest struct {
-	Email string `json:"email"`
+	Email     string     `json:"email"`
+	DataLimit int64      `json:"data_limit"` // bytes; 0 or omitted = unlimited
+	ExpiresAt *time.Time `json:"expires_at"` // RFC3339; omitted = never expires
 }
 
 // handleCreateUser creates a new VPN user, generating its id and UUID.
@@ -50,7 +52,9 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		Email:     req.Email,
 		UUID:      util.NewUUID(),
 		Enabled:   true,
+		DataLimit: req.DataLimit,
 		CreatedAt: time.Now().UTC(),
+		ExpiresAt: req.ExpiresAt,
 	}
 	if err := s.store.CreateUser(user); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create user")
@@ -117,6 +121,40 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	s.cluster.RemoveUser(r.Context(), user.Email)
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleResetUser zeroes a user's traffic counter and re-enables them, then
+// re-adds them to the local Xray and every node. Use this after a renewal or
+// a quota top-up to bring a disabled user back online.
+func (s *Server) handleResetUser(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	user, err := s.store.GetUser(id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+
+	wasDisabled := !user.Enabled
+	user.Used = 0
+	user.Enabled = true
+	if err := s.store.UpdateUser(user); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update user")
+		return
+	}
+
+	// If the user had been disabled, they were removed from the proxies — add
+	// them back so the reset actually restores access.
+	if wasDisabled {
+		if err := s.xray.AddUser(r.Context(), s.cfg.InboundTag, user.Email, user.UUID, s.cfg.Node.Flow); err != nil {
+			log.Printf("reset user: local xray add failed: %v", err)
+		}
+		s.cluster.AddUser(r.Context(), user.Email, user.UUID, s.cfg.Node.Flow)
+	}
+	writeJSON(w, http.StatusOK, user)
 }
 
 // handleSubscription returns the base64-encoded share links for a user, the

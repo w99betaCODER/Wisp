@@ -22,6 +22,7 @@ type Store interface {
 	ListUsers() ([]model.User, error)
 	GetUser(id string) (model.User, error)
 	CreateUser(u model.User) error
+	UpdateUser(u model.User) error
 	DeleteUser(id string) error
 
 	ListNodes() ([]model.Node, error)
@@ -79,6 +80,18 @@ func (s *MemoryStore) CreateUser(u model.User) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.users[u.ID] = u
+	return nil
+}
+
+// UpdateUser replaces the stored user with the same id, or ErrNotFound.
+func (s *MemoryStore) UpdateUser(u model.User) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.users[u.ID]; !ok {
+		return ErrNotFound
+	}
 	s.users[u.ID] = u
 	return nil
 }

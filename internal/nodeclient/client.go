@@ -56,6 +56,27 @@ func (c *Client) RemoveUser(ctx context.Context, email string) error {
 	return c.do(req)
 }
 
+// Stats fetches per-user traffic deltas (email -> bytes) from the node.
+func (c *Client) Stats(ctx context.Context) (map[string]int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/v1/stats", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("node %s returned %s", req.URL.Host, resp.Status)
+	}
+	var out map[string]int64
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *Client) do(req *http.Request) error {
 	resp, err := c.http.Do(req)
 	if err != nil {

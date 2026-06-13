@@ -42,6 +42,34 @@ func (c *Cluster) RemoveUser(ctx context.Context, email string) {
 	})
 }
 
+// CollectStats polls every enabled node for per-user traffic deltas and sums
+// them by email. A node that errors is logged and skipped.
+func (c *Cluster) CollectStats(ctx context.Context) map[string]int64 {
+	total := make(map[string]int64)
+	nodes, err := c.store.ListNodes()
+	if err != nil {
+		log.Printf("cluster: list nodes: %v", err)
+		return total
+	}
+	for _, n := range nodes {
+		if !n.Enabled {
+			continue
+		}
+		nc := nodeclient.New(n.Address, c.tls, c.timeout)
+		cctx, cancel := context.WithTimeout(ctx, c.timeout)
+		stats, err := nc.Stats(cctx)
+		cancel()
+		if err != nil {
+			log.Printf("cluster: node %q (%s): stats: %v", n.Name, n.Address, err)
+			continue
+		}
+		for email, bytes := range stats {
+			total[email] += bytes
+		}
+	}
+	return total
+}
+
 // each runs fn against every enabled node, logging per-node failures.
 func (c *Cluster) each(ctx context.Context, what string, fn func(context.Context, *nodeclient.Client) error) {
 	nodes, err := c.store.ListNodes()

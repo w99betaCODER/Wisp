@@ -4,6 +4,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config holds all runtime settings for the panel.
@@ -32,6 +33,10 @@ type Config struct {
 	ClientCert string // WISP_NODE_TLS_CERT
 	ClientKey  string // WISP_NODE_TLS_KEY
 	ClientCA   string // WISP_NODE_TLS_CA (verifies node server certs)
+
+	// EnforceInterval is how often the panel polls traffic and disables users
+	// that exceeded their quota or expired.
+	EnforceInterval time.Duration
 }
 
 // NodeConfig holds the public connection parameters of a VPN node.
@@ -61,9 +66,10 @@ func Load() Config {
 			RealitySID:  env("WISP_REALITY_SID", ""),
 			Fingerprint: env("WISP_REALITY_FP", "chrome"),
 		},
-		ClientCert: env("WISP_NODE_TLS_CERT", ""),
-		ClientKey:  env("WISP_NODE_TLS_KEY", ""),
-		ClientCA:   env("WISP_NODE_TLS_CA", ""),
+		ClientCert:      env("WISP_NODE_TLS_CERT", ""),
+		ClientKey:       env("WISP_NODE_TLS_KEY", ""),
+		ClientCA:        env("WISP_NODE_TLS_CA", ""),
+		EnforceInterval: time.Duration(envInt("WISP_ENFORCE_INTERVAL", 60)) * time.Second,
 	}
 }
 

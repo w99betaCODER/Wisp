@@ -17,6 +17,10 @@ type Client interface {
 	AddUser(ctx context.Context, inboundTag, email, uuid, flow string) error
 	// RemoveUser removes the user with the given email from the inbound.
 	RemoveUser(ctx context.Context, inboundTag, email string) error
+	// Stats returns per-user traffic in bytes (uplink+downlink summed),
+	// keyed by email. When reset is true Xray's counters are zeroed, so each
+	// call returns the delta since the previous call.
+	Stats(ctx context.Context, reset bool) (map[string]int64, error)
 	// Close releases any underlying connection.
 	Close() error
 }
@@ -46,6 +50,10 @@ func (NoopClient) AddUser(_ context.Context, tag, email, uuid, flow string) erro
 func (NoopClient) RemoveUser(_ context.Context, tag, email string) error {
 	log.Printf("[xray:noop] RemoveUser tag=%s email=%s", tag, email)
 	return nil
+}
+
+func (NoopClient) Stats(_ context.Context, _ bool) (map[string]int64, error) {
+	return map[string]int64{}, nil
 }
 
 func (NoopClient) Close() error { return nil }

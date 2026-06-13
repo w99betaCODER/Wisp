@@ -13,6 +13,8 @@ type User struct {
 	Email     string     `json:"email"`                // identifier used inside Xray
 	UUID      string     `json:"uuid"`                 // VLESS client UUID
 	Enabled   bool       `json:"enabled"`              // false = access revoked
+	DataLimit int64      `json:"data_limit"`           // byte quota; 0 = unlimited
+	Used      int64      `json:"used"`                 // bytes consumed so far
 	CreatedAt time.Time  `json:"created_at"`           // when the account was created
 	ExpiresAt *time.Time `json:"expires_at,omitempty"` // nil = never expires
 }
