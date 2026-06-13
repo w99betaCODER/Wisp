@@ -7,6 +7,10 @@
 Manage Xray-based VPN users across many servers from one clean dashboard.
 No Python virtualenvs, no `node_modules` on your server — just one binary.
 
+[![CI](https://github.com/w99betaCODER/Wisp/actions/workflows/ci.yml/badge.svg)](https://github.com/w99betaCODER/Wisp/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 </div>
 
 ![Wisp dashboard](docs/dashboard.png)
