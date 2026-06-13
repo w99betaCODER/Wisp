@@ -89,13 +89,14 @@ curl http://localhost:8080/api/users
 | `POST` | `/api/orders` | Open an order (`{"user_id","plan_id"}`) |
 | `POST` | `/api/orders/{id}/pay` | Settle an order and apply its plan to the user |
 | `POST` | `/api/webhook/{provider}` | Payment-gateway callback (HMAC-signed) that settles an order |
-| `POST` | `/api/login` | Exchange the API token for a session cookie |
+| `POST` | `/api/login` | Sign in with `{username, password}` → session cookie |
 | `GET` | `/api/branding` | White-label settings (public) |
 | `GET` | `/sub/{id}` | Subscription content (base64 share links) for a VPN client |
 
-Set `WISP_API_TOKEN` to require auth: send `Authorization: Bearer <token>` on
-admin calls, or sign in through the dashboard. The webhook is authenticated by
-its HMAC signature instead, and `/api/branding` is public.
+Set `WISP_ADMIN_PASS` to require sign-in: the dashboard shows a username/password
+login (`POST /api/login` sets an httpOnly session cookie). Scripts can instead
+send `Authorization: Bearer <WISP_API_TOKEN>`. The webhook is authenticated by
+its HMAC signature, and `/api/branding` is public.
 
 ## Configuration
 
@@ -118,7 +119,9 @@ All settings come from environment variables (sensible defaults shown):
 | `WISP_NODE_TLS_KEY` | _(empty)_ | Panel mTLS client key |
 | `WISP_NODE_TLS_CA` | _(empty)_ | CA that verifies node server certs |
 | `WISP_ENFORCE_INTERVAL` | `60` | Seconds between traffic-accounting + quota/expiry sweeps |
-| `WISP_API_TOKEN` | _(empty)_ | Require this token for the admin API. Empty → no auth (dev only) |
+| `WISP_ADMIN_USER` | `admin` | Dashboard login username |
+| `WISP_ADMIN_PASS` | _(empty)_ | Dashboard login password. Empty → no login (dev only) |
+| `WISP_API_TOKEN` | _(empty)_ | Optional Bearer token for scripts/API clients (alternative to the cookie) |
 | `WISP_WEBHOOK_SECRET` | _(empty)_ | HMAC-SHA256 key for payment webhooks. Empty → webhook disabled |
 | `WISP_BRAND_NAME` | `Wisp` | Dashboard title / brand name (white-label) |
 | `WISP_BRAND_ACCENT` | `#3b82f6` | Dashboard accent color |

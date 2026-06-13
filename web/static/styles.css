@@ -80,7 +80,8 @@ main { max-width: 1080px; margin: 0 auto; padding: 24px 20px 60px; }
   border-radius: 8px; padding: 8px 11px; font-size: 13px; flex: 1; min-width: 140px;
 }
 .form input:focus { outline: none; border-color: var(--accent); }
-.hidden { display: none; }
+/* Utility: always wins over component display rules (e.g. .login-overlay). */
+.hidden { display: none !important; }
 
 /* Tables */
 .table-wrap { overflow-x: auto; }

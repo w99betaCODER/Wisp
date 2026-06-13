@@ -38,8 +38,13 @@ type Config struct {
 	// that exceeded their quota or expired.
 	EnforceInterval time.Duration
 
-	// APIToken, when set, protects the admin API: callers must present it as a
-	// Bearer token (or log in via the dashboard). Empty = no auth (dev only).
+	// AdminUser / AdminPass are the dashboard login credentials. When AdminPass
+	// is set, the dashboard requires sign-in. Empty AdminPass = no login.
+	AdminUser string
+	AdminPass string
+
+	// APIToken, when set, lets scripts/API clients authenticate with a Bearer
+	// token instead of the dashboard cookie. Optional.
 	APIToken string
 
 	// WebhookSecret is the HMAC-SHA256 key a payment gateway signs its webhook
@@ -88,6 +93,8 @@ func Load() Config {
 		ClientKey:       env("WISP_NODE_TLS_KEY", ""),
 		ClientCA:        env("WISP_NODE_TLS_CA", ""),
 		EnforceInterval: time.Duration(envInt("WISP_ENFORCE_INTERVAL", 60)) * time.Second,
+		AdminUser:       env("WISP_ADMIN_USER", "admin"),
+		AdminPass:       env("WISP_ADMIN_PASS", ""),
 		APIToken:        env("WISP_API_TOKEN", ""),
 		WebhookSecret:   env("WISP_WEBHOOK_SECRET", ""),
 		Brand: BrandConfig{

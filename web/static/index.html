@@ -17,8 +17,9 @@
   <div id="login" class="login-overlay hidden">
     <form class="login-box" onsubmit="doLogin(event)">
       <div class="brand"><span class="logo">🌫️</span> <span id="login-name">Wisp</span></div>
-      <p>Enter the admin token to continue.</p>
-      <input id="login-token" type="password" placeholder="API token" autocomplete="current-password" />
+      <p>Sign in to continue.</p>
+      <input id="login-user" placeholder="Username" autocomplete="username" />
+      <input id="login-pass" type="password" placeholder="Password" autocomplete="current-password" />
       <button class="btn primary" type="submit">Sign in</button>
     </form>
   </div>

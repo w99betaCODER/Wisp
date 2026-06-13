@@ -1,20 +1,35 @@
 package server
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
 )
 
-const authCookie = "wisp_token"
+const sessionCookie = "wisp_session"
 
-// auth gates the admin API behind the configured token. Public paths — the
-// dashboard, subscriptions, health, login, branding and the signed webhook —
-// are always allowed. When no token is configured, auth is a pass-through.
+// authEnabled reports whether any authentication is configured.
+func (s *Server) authEnabled() bool {
+	return s.cfg.AdminPass != "" || s.cfg.APIToken != ""
+}
+
+// sessionValue is a stable secret derived from the admin credentials and stored
+// in the session cookie. It needs no server-side session store and cannot be
+// forged without knowing the password.
+func (s *Server) sessionValue() string {
+	sum := sha256.Sum256([]byte(s.cfg.AdminUser + ":" + s.cfg.AdminPass))
+	return hex.EncodeToString(sum[:])
+}
+
+// auth gates the admin API. Public paths — dashboard, /sub, health, login,
+// branding and the HMAC-signed webhook — are always allowed. When nothing is
+// configured, auth is a pass-through.
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.cfg.APIToken == "" || !protected(r.URL.Path) || s.validToken(r) {
+		if !s.authEnabled() || !protected(r.URL.Path) || s.authorized(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -22,7 +37,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 	})
 }
 
-// protected reports whether a path requires the API token.
+// protected reports whether a path requires authentication.
 func protected(path string) bool {
 	if !strings.HasPrefix(path, "/api/") {
 		return false // dashboard, /sub, /healthz, static assets
@@ -36,39 +51,50 @@ func protected(path string) bool {
 	return true
 }
 
-// validToken checks the Bearer header or the session cookie in constant time.
-func (s *Server) validToken(r *http.Request) bool {
-	tok := ""
-	if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
-		tok = strings.TrimPrefix(h, "Bearer ")
-	} else if c, err := r.Cookie(authCookie); err == nil {
-		tok = c.Value
+// authorized accepts a valid session cookie (dashboard login) or a Bearer token
+// equal to WISP_API_TOKEN (scripts / API clients).
+func (s *Server) authorized(r *http.Request) bool {
+	if s.cfg.AdminPass != "" {
+		if c, err := r.Cookie(sessionCookie); err == nil &&
+			subtle.ConstantTimeCompare([]byte(c.Value), []byte(s.sessionValue())) == 1 {
+			return true
+		}
 	}
-	return tok != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(s.cfg.APIToken)) == 1
+	if s.cfg.APIToken != "" {
+		h := r.Header.Get("Authorization")
+		if strings.HasPrefix(h, "Bearer ") &&
+			subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(h, "Bearer ")), []byte(s.cfg.APIToken)) == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 type loginRequest struct {
-	Token string `json:"token"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
-// handleLogin sets an httpOnly session cookie when the token matches.
+// handleLogin verifies the username/password and sets the session cookie.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if s.cfg.APIToken == "" {
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true}) // auth disabled
+	if s.cfg.AdminPass == "" {
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true}) // login disabled
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(req.Token), []byte(s.cfg.APIToken)) != 1 {
-		writeError(w, http.StatusUnauthorized, "invalid token")
+	userOK := subtle.ConstantTimeCompare([]byte(req.Username), []byte(s.cfg.AdminUser)) == 1
+	passOK := subtle.ConstantTimeCompare([]byte(req.Password), []byte(s.cfg.AdminPass)) == 1
+	if !userOK || !passOK {
+		writeError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     authCookie,
-		Value:    req.Token,
+		Name:     sessionCookie,
+		Value:    s.sessionValue(),
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,

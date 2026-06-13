@@ -70,7 +70,7 @@ func (s *Server) Routes() http.Handler {
 	if err != nil {
 		panic(err) // the embedded FS is built at compile time; this cannot fail
 	}
-	mux.Handle("GET /", http.FileServerFS(static))
+	mux.Handle("GET /", noCache(http.FileServerFS(static)))
 
 	// Requests pass through logging, then the API-token gate.
 	return logging(s.auth(mux))

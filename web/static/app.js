@@ -39,15 +39,27 @@ function applyBranding(b) {
   }
 }
 
+// doLogin uses a direct fetch (not api()) so a failed sign-in shows a clear
+// message instead of being swallowed by the generic 401 handler.
 async function doLogin(ev) {
   ev.preventDefault();
+  const username = document.getElementById("login-user").value;
+  const password = document.getElementById("login-pass").value;
   try {
-    await api("POST", "/api/login", { token: document.getElementById("login-token").value });
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) {
+      toast(res.status === 401 ? "Invalid username or password" : "Login failed (" + res.status + ")", true);
+      return;
+    }
     document.getElementById("login").classList.add("hidden");
     toast("Signed in");
     load();
   } catch (e) {
-    if (e.message !== "auth") toast(e.message, true);
+    toast("Cannot reach server: " + e.message, true);
   }
 }
 
