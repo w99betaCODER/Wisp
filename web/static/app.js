@@ -11,12 +11,44 @@ async function api(method, path, body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(path, opts);
+  if (res.status === 401) {
+    document.getElementById("login").classList.remove("hidden");
+    throw new Error("auth");
+  }
   if (!res.ok) {
     let msg = res.status + " " + res.statusText;
     try { const j = await res.json(); if (j.error) msg = j.error; } catch (_) {}
     throw new Error(msg);
   }
   return res.status === 204 ? null : res.json();
+}
+
+// applyBranding white-labels the page from the /api/branding settings.
+function applyBranding(b) {
+  if (!b) return;
+  if (b.name) {
+    document.title = b.name + " — VPN panel";
+    document.getElementById("brand-name").textContent = b.name;
+    document.getElementById("login-name").textContent = b.name;
+  }
+  if (b.tagline) document.querySelector(".sub").textContent = b.tagline;
+  if (b.accent) {
+    const root = document.documentElement.style;
+    root.setProperty("--accent", b.accent);
+    root.setProperty("--accent-2", b.accent);
+  }
+}
+
+async function doLogin(ev) {
+  ev.preventDefault();
+  try {
+    await api("POST", "/api/login", { token: document.getElementById("login-token").value });
+    document.getElementById("login").classList.add("hidden");
+    toast("Signed in");
+    load();
+  } catch (e) {
+    if (e.message !== "auth") toast(e.message, true);
+  }
 }
 
 function toast(msg, isErr) {
@@ -158,7 +190,7 @@ async function load() {
     renderNodes(nodes || []);
     renderStats(users || [], nodes || [], state.orders);
   } catch (e) {
-    toast("Load failed: " + e.message, true);
+    if (e.message !== "auth") toast("Load failed: " + e.message, true);
   }
 }
 
@@ -231,6 +263,10 @@ async function deleteNode(id, name) {
   catch (e) { toast(e.message, true); }
 }
 
-// initial load + light auto-refresh
-load();
-setInterval(load, 5000);
+// boot: apply branding (public), then load data and auto-refresh.
+async function boot() {
+  try { applyBranding(await api("GET", "/api/branding")); } catch (_) {}
+  load();
+  setInterval(load, 5000);
+}
+boot();

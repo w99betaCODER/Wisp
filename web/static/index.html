@@ -9,9 +9,19 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="logo">🌫️</span> Wisp</div>
+    <div class="brand"><span class="logo">🌫️</span> <span id="brand-name">Wisp</span></div>
     <div class="sub">single-binary · multi-node · Xray VPN panel</div>
   </header>
+
+  <!-- Shown only when the API requires a token and the caller is not signed in -->
+  <div id="login" class="login-overlay hidden">
+    <form class="login-box" onsubmit="doLogin(event)">
+      <div class="brand"><span class="logo">🌫️</span> <span id="login-name">Wisp</span></div>
+      <p>Enter the admin token to continue.</p>
+      <input id="login-token" type="password" placeholder="API token" autocomplete="current-password" />
+      <button class="btn primary" type="submit">Sign in</button>
+    </form>
+  </div>
 
   <main>
     <!-- Stats strip -->

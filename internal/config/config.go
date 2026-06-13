@@ -37,6 +37,24 @@ type Config struct {
 	// EnforceInterval is how often the panel polls traffic and disables users
 	// that exceeded their quota or expired.
 	EnforceInterval time.Duration
+
+	// APIToken, when set, protects the admin API: callers must present it as a
+	// Bearer token (or log in via the dashboard). Empty = no auth (dev only).
+	APIToken string
+
+	// WebhookSecret is the HMAC-SHA256 key a payment gateway signs its webhook
+	// with. Empty = the webhook endpoint is disabled.
+	WebhookSecret string
+
+	// Brand customizes the dashboard for white-labeling.
+	Brand BrandConfig
+}
+
+// BrandConfig white-labels the dashboard.
+type BrandConfig struct {
+	Name    string `json:"name"`
+	Accent  string `json:"accent"`
+	Tagline string `json:"tagline"`
 }
 
 // NodeConfig holds the public connection parameters of a VPN node.
@@ -70,6 +88,13 @@ func Load() Config {
 		ClientKey:       env("WISP_NODE_TLS_KEY", ""),
 		ClientCA:        env("WISP_NODE_TLS_CA", ""),
 		EnforceInterval: time.Duration(envInt("WISP_ENFORCE_INTERVAL", 60)) * time.Second,
+		APIToken:        env("WISP_API_TOKEN", ""),
+		WebhookSecret:   env("WISP_WEBHOOK_SECRET", ""),
+		Brand: BrandConfig{
+			Name:    env("WISP_BRAND_NAME", "Wisp"),
+			Accent:  env("WISP_BRAND_ACCENT", "#3b82f6"),
+			Tagline: env("WISP_BRAND_TAGLINE", "single-binary · multi-node · Xray VPN panel"),
+		},
 	}
 }
 

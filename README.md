@@ -28,7 +28,8 @@ No Python virtualenvs, no `node_modules` on your server — just one binary.
 | Traffic quota & expiry | ✅ | ✅ | ✅ |
 | Clean, modern UI | ⚠️ | ⚠️ | ✅ |
 | Built-in billing | ❌ | ❌ | ✅ |
-| White-label / resellers | ❌ | ❌ | ✅ *(planned)* |
+| White-label branding | ❌ | ❌ | ✅ |
+| Multi-tenant resellers | ❌ | ❌ | ✅ *(planned)* |
 
 Wisp's two principles are **simplicity** and **functionality**: trivial to install,
 powerful enough to run a real VPN business.
@@ -87,7 +88,14 @@ curl http://localhost:8080/api/users
 | `GET` | `/api/orders` | List orders |
 | `POST` | `/api/orders` | Open an order (`{"user_id","plan_id"}`) |
 | `POST` | `/api/orders/{id}/pay` | Settle an order and apply its plan to the user |
+| `POST` | `/api/webhook/{provider}` | Payment-gateway callback (HMAC-signed) that settles an order |
+| `POST` | `/api/login` | Exchange the API token for a session cookie |
+| `GET` | `/api/branding` | White-label settings (public) |
 | `GET` | `/sub/{id}` | Subscription content (base64 share links) for a VPN client |
+
+Set `WISP_API_TOKEN` to require auth: send `Authorization: Bearer <token>` on
+admin calls, or sign in through the dashboard. The webhook is authenticated by
+its HMAC signature instead, and `/api/branding` is public.
 
 ## Configuration
 
@@ -110,6 +118,11 @@ All settings come from environment variables (sensible defaults shown):
 | `WISP_NODE_TLS_KEY` | _(empty)_ | Panel mTLS client key |
 | `WISP_NODE_TLS_CA` | _(empty)_ | CA that verifies node server certs |
 | `WISP_ENFORCE_INTERVAL` | `60` | Seconds between traffic-accounting + quota/expiry sweeps |
+| `WISP_API_TOKEN` | _(empty)_ | Require this token for the admin API. Empty → no auth (dev only) |
+| `WISP_WEBHOOK_SECRET` | _(empty)_ | HMAC-SHA256 key for payment webhooks. Empty → webhook disabled |
+| `WISP_BRAND_NAME` | `Wisp` | Dashboard title / brand name (white-label) |
+| `WISP_BRAND_ACCENT` | `#3b82f6` | Dashboard accent color |
+| `WISP_BRAND_TAGLINE` | _(default)_ | Subtitle shown under the brand name |
 
 The **node agent** (`cmd/node`) reads its own variables:
 
@@ -171,10 +184,12 @@ curl -X POST http://localhost:8080/api/orders -H 'Content-Type: application/json
 curl -X POST http://localhost:8080/api/orders/<order-id>/pay
 ```
 
-The `pay` endpoint is the manual/admin path. A real payment gateway plugs in by
-verifying its webhook signature and then calling the same `billing.Apply` logic
-— so adding Cryptomus, YooKassa, Telegram Payments, Stripe, etc. is a small,
-self-contained change.
+The `pay` endpoint is the manual/admin path. For a real gateway, set
+`WISP_WEBHOOK_SECRET` and point the provider at `POST /api/webhook/{provider}`:
+the panel verifies the request's HMAC-SHA256 signature (`X-Wisp-Signature`) and
+then settles the order through the same `billing.Apply` logic. Adapting a
+specific gateway (Cryptomus, YooKassa, Telegram Payments, Stripe, …) is just
+mapping its payload onto `{order_id, status}`.
 
 ## Production deployment
 
@@ -221,8 +236,9 @@ See [`internal/`](internal/) for the package layout and [`cmd/`](cmd/) for the
 - [x] **Phase 2** — Multi-node: node agent, mTLS, user distribution
 - [x] **Phase 3** — Traffic accounting, quota & expiry, auto-disable
 - [x] **Web dashboard** — embedded single-page admin UI (zero build step)
-- [x] **Phase 4** — Billing: plans, orders, apply-on-payment (webhook-ready)
-- [ ] **Phase 5** — White-label / resellers, recurring auto-renewal, real gateways
+- [x] **Phase 4** — Billing: plans, orders, apply-on-payment
+- [x] **Auth & white-label** — API-token login, brandable name/accent, HMAC payment webhooks
+- [ ] **Phase 5** — Multi-tenant resellers, recurring auto-renewal
 
 ## Development
 

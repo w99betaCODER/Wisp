@@ -54,6 +54,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/orders", s.handleCreateOrder)
 	mux.HandleFunc("POST /api/orders/{id}/pay", s.handlePayOrder)
 
+	// Payment-gateway callback (HMAC-authenticated, not token-gated).
+	mux.HandleFunc("POST /api/webhook/{provider}", s.handleWebhook)
+
+	// Public endpoints: branding for the login page, and login itself.
+	mux.HandleFunc("GET /api/branding", s.handleBranding)
+	mux.HandleFunc("POST /api/login", s.handleLogin)
+
 	// Subscription link consumed directly by VPN clients.
 	mux.HandleFunc("GET /sub/{id}", s.handleSubscription)
 
@@ -65,6 +72,6 @@ func (s *Server) Routes() http.Handler {
 	}
 	mux.Handle("GET /", http.FileServerFS(static))
 
-	// Every request passes through the logging middleware first.
-	return logging(mux)
+	// Requests pass through logging, then the API-token gate.
+	return logging(s.auth(mux))
 }

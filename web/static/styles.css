@@ -119,6 +119,25 @@ tr:hover td { background: #1a212d; }
 footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
 footer a { color: var(--accent); text-decoration: none; }
 
+/* Login overlay */
+.login-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(8, 11, 16, 0.86); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.login-box {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+  padding: 30px 34px; width: 320px; display: flex; flex-direction: column; gap: 12px;
+  box-shadow: 0 20px 60px #000a;
+}
+.login-box .brand { font-size: 22px; font-weight: 700; }
+.login-box p { color: var(--muted); font-size: 13px; margin: 0; }
+.login-box input {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 10px 12px; font-size: 14px;
+}
+.login-box input:focus { outline: none; border-color: var(--accent); }
+
 /* Toast */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
