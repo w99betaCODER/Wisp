@@ -9,6 +9,8 @@ No Python virtualenvs, no `node_modules` on your server — just one binary.
 
 </div>
 
+![Wisp dashboard](docs/dashboard.png)
+
 ---
 
 ## Why Wisp?
@@ -19,9 +21,10 @@ No Python virtualenvs, no `node_modules` on your server — just one binary.
 |---|:---:|:---:|:---:|
 | Multi-node | ❌ | ✅ | ✅ |
 | Single binary deploy | ❌ | ❌ | ✅ |
+| Traffic quota & expiry | ✅ | ✅ | ✅ |
+| Clean, modern UI | ⚠️ | ⚠️ | ✅ |
 | Built-in billing | ❌ | ❌ | ✅ *(planned)* |
 | White-label / resellers | ❌ | ❌ | ✅ *(planned)* |
-| Clean, modern UI | ⚠️ | ⚠️ | ✅ *(planned)* |
 
 Wisp's two principles are **simplicity** and **functionality**: trivial to install,
 powerful enough to run a real VPN business.
@@ -30,8 +33,9 @@ powerful enough to run a real VPN business.
 
 > ⚠️ **Early development.** Working today: SQLite persistence, Xray gRPC
 > integration (VLESS + Reality), base64 subscription links, **multi-node** (a
-> panel driving any number of node agents over mTLS), and **traffic accounting**
-> with automatic disable on quota or expiry. Billing is next on the roadmap.
+> panel driving any number of node agents over mTLS), **traffic accounting**
+> with automatic disable on quota or expiry, and an **embedded web dashboard**.
+> Billing is next on the roadmap.
 
 ## Quick start
 
@@ -168,8 +172,9 @@ See [`internal/`](internal/) for the package layout and [`cmd/`](cmd/) for the
 - [x] **Phase 1** — SQLite persistence + Xray gRPC integration (VLESS + Reality), subscription links
 - [x] **Phase 2** — Multi-node: node agent, mTLS, user distribution
 - [x] **Phase 3** — Traffic accounting, quota & expiry, auto-disable
+- [x] **Web dashboard** — embedded single-page admin UI (zero build step)
 - [ ] **Phase 4** — Billing: plans, payments, auto-renewal
-- [ ] **Phase 5** — White-label / resellers, web UI
+- [ ] **Phase 5** — White-label / resellers
 
 ## Development
 

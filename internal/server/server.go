@@ -2,12 +2,14 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 
 	"github.com/w99betaCODER/Wisp/internal/cluster"
 	"github.com/w99betaCODER/Wisp/internal/config"
 	"github.com/w99betaCODER/Wisp/internal/store"
 	"github.com/w99betaCODER/Wisp/internal/xray"
+	"github.com/w99betaCODER/Wisp/web"
 )
 
 // Server holds the dependencies shared by all HTTP handlers.
@@ -46,6 +48,14 @@ func (s *Server) Routes() http.Handler {
 
 	// Subscription link consumed directly by VPN clients.
 	mux.HandleFunc("GET /sub/{id}", s.handleSubscription)
+
+	// Embedded dashboard served at "/" (the API patterns above are more
+	// specific, so they always win over this catch-all).
+	static, err := fs.Sub(web.FS(), "static")
+	if err != nil {
+		panic(err) // the embedded FS is built at compile time; this cannot fail
+	}
+	mux.Handle("GET /", http.FileServerFS(static))
 
 	// Every request passes through the logging middleware first.
 	return logging(mux)
