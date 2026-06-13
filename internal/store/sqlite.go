@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS users (
     enabled    INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL,
     expires_at TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nodes (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    address    TEXT NOT NULL,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL
 );`
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate: %w", err)
@@ -121,10 +128,84 @@ func (s *SQLiteStore) DeleteUser(id string) error {
 	return nil
 }
 
+// ListNodes returns all nodes ordered by creation time (oldest first).
+func (s *SQLiteStore) ListNodes() ([]model.Node, error) {
+	rows, err := s.db.Query(`
+		SELECT id, name, address, enabled, created_at
+		FROM nodes ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.Node
+	for rows.Next() {
+		n, err := scanNode(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+
+// GetNode returns the node with the given id, or ErrNotFound.
+func (s *SQLiteStore) GetNode(id string) (model.Node, error) {
+	row := s.db.QueryRow(`
+		SELECT id, name, address, enabled, created_at
+		FROM nodes WHERE id = ?`, id)
+
+	n, err := scanNode(row)
+	if err == sql.ErrNoRows {
+		return model.Node{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Node{}, fmt.Errorf("get node: %w", err)
+	}
+	return n, nil
+}
+
+// CreateNode inserts a new node.
+func (s *SQLiteStore) CreateNode(n model.Node) error {
+	_, err := s.db.Exec(`
+		INSERT INTO nodes (id, name, address, enabled, created_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		n.ID, n.Name, n.Address, n.Enabled, n.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create node: %w", err)
+	}
+	return nil
+}
+
+// DeleteNode removes a node by id, returning ErrNotFound if absent.
+func (s *SQLiteStore) DeleteNode(id string) error {
+	res, err := s.db.Exec(`DELETE FROM nodes WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete node: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // scanner is satisfied by both *sql.Row and *sql.Rows, so scanUser works
 // for single-row and multi-row queries alike.
 type scanner interface {
 	Scan(dest ...any) error
+}
+
+// scanNode reads one node row.
+func scanNode(sc scanner) (model.Node, error) {
+	var n model.Node
+	if err := sc.Scan(&n.ID, &n.Name, &n.Address, &n.Enabled, &n.CreatedAt); err != nil {
+		return model.Node{}, err
+	}
+	return n, nil
 }
 
 // scanUser reads one user row, translating the nullable expires_at column.

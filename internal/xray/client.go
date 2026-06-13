@@ -21,6 +21,16 @@ type Client interface {
 	Close() error
 }
 
+// New returns a gRPC-backed Client when apiAddr is set (host:port of the Xray
+// API), or a NoopClient when it is empty. Both the panel and the node agent
+// use this so the "no Xray configured" behaviour is identical everywhere.
+func New(apiAddr string) (Client, error) {
+	if apiAddr == "" {
+		return NewNoopClient(), nil
+	}
+	return Dial(apiAddr)
+}
+
 // NoopClient satisfies Client without contacting Xray. It logs what it would
 // have done, so the panel runs end-to-end on a machine with no Xray present.
 type NoopClient struct{}

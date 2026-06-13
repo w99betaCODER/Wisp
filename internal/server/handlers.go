@@ -65,6 +65,10 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "failed to add user to xray")
 		return
 	}
+
+	// Fan the new user out to every enabled node (best-effort).
+	s.cluster.AddUser(r.Context(), user.Email, user.UUID, s.cfg.Node.Flow)
+
 	writeJSON(w, http.StatusCreated, user)
 }
 
@@ -108,6 +112,10 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	if err := s.xray.RemoveUser(r.Context(), s.cfg.InboundTag, user.Email); err != nil {
 		log.Printf("delete user: xray remove failed: %v", err)
 	}
+
+	// Remove from every enabled node too (best-effort).
+	s.cluster.RemoveUser(r.Context(), user.Email)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

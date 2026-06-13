@@ -4,6 +4,7 @@ package server
 import (
 	"net/http"
 
+	"github.com/w99betaCODER/Wisp/internal/cluster"
 	"github.com/w99betaCODER/Wisp/internal/config"
 	"github.com/w99betaCODER/Wisp/internal/store"
 	"github.com/w99betaCODER/Wisp/internal/xray"
@@ -11,14 +12,15 @@ import (
 
 // Server holds the dependencies shared by all HTTP handlers.
 type Server struct {
-	cfg   config.Config
-	store store.Store
-	xray  xray.Client
+	cfg     config.Config
+	store   store.Store
+	xray    xray.Client
+	cluster *cluster.Cluster
 }
 
 // New constructs a Server with its dependencies injected.
-func New(cfg config.Config, st store.Store, xc xray.Client) *Server {
-	return &Server{cfg: cfg, store: st, xray: xc}
+func New(cfg config.Config, st store.Store, xc xray.Client, cl *cluster.Cluster) *Server {
+	return &Server{cfg: cfg, store: st, xray: xc, cluster: cl}
 }
 
 // Routes builds the HTTP handler with every route registered.
@@ -35,6 +37,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/users", s.handleCreateUser)
 	mux.HandleFunc("GET /api/users/{id}", s.handleGetUser)
 	mux.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
+
+	mux.HandleFunc("GET /api/nodes", s.handleListNodes)
+	mux.HandleFunc("POST /api/nodes", s.handleCreateNode)
+	mux.HandleFunc("GET /api/nodes/{id}", s.handleGetNode)
+	mux.HandleFunc("DELETE /api/nodes/{id}", s.handleDeleteNode)
 
 	// Subscription link consumed directly by VPN clients.
 	mux.HandleFunc("GET /sub/{id}", s.handleSubscription)

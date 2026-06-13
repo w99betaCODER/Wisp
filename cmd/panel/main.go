@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log"
 	"net/http"
@@ -15,7 +16,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/w99betaCODER/Wisp/internal/cluster"
 	"github.com/w99betaCODER/Wisp/internal/config"
+	"github.com/w99betaCODER/Wisp/internal/mtls"
 	"github.com/w99betaCODER/Wisp/internal/server"
 	"github.com/w99betaCODER/Wisp/internal/store"
 	"github.com/w99betaCODER/Wisp/internal/xray"
@@ -38,7 +41,22 @@ func main() {
 	xc := newXrayClient(cfg)
 	defer xc.Close()
 
-	srv := server.New(cfg, st, xc)
+	// Build the panel's mTLS client config for talking to node agents. Without
+	// it the panel reaches nodes over plain HTTP — fine for local development,
+	// not for production.
+	var clusterTLS *tls.Config
+	if cfg.ClientCert != "" {
+		clusterTLS, err = mtls.ClientConfig(cfg.ClientCert, cfg.ClientKey, cfg.ClientCA)
+		if err != nil {
+			log.Fatalf("node mTLS config: %v", err)
+		}
+		log.Println("node mTLS enabled")
+	} else {
+		log.Println("WISP_NODE_TLS_CERT not set — talking to nodes over plain HTTP (dev only)")
+	}
+	cl := cluster.New(st, clusterTLS)
+
+	srv := server.New(cfg, st, xc, cl)
 
 	httpServer := &http.Server{
 		Addr:         cfg.Addr,

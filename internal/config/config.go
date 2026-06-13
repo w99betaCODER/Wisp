@@ -26,6 +26,12 @@ type Config struct {
 	// Node describes how clients reach the VPN node; used to build the
 	// vless:// subscription links.
 	Node NodeConfig
+
+	// Panel-side mTLS material for talking to node agents. When ClientCert
+	// is empty the panel falls back to plain HTTP (development only).
+	ClientCert string // WISP_NODE_TLS_CERT
+	ClientKey  string // WISP_NODE_TLS_KEY
+	ClientCA   string // WISP_NODE_TLS_CA (verifies node server certs)
 }
 
 // NodeConfig holds the public connection parameters of a VPN node.
@@ -55,6 +61,9 @@ func Load() Config {
 			RealitySID:  env("WISP_REALITY_SID", ""),
 			Fingerprint: env("WISP_REALITY_FP", "chrome"),
 		},
+		ClientCert: env("WISP_NODE_TLS_CERT", ""),
+		ClientKey:  env("WISP_NODE_TLS_KEY", ""),
+		ClientCA:   env("WISP_NODE_TLS_CA", ""),
 	}
 }
 

@@ -28,9 +28,10 @@ powerful enough to run a real VPN business.
 
 ## Status
 
-> ⚠️ **Early development.** Single-server core works today: SQLite persistence,
-> Xray gRPC integration (VLESS + Reality) and base64 subscription links.
-> Multi-node, traffic limits and billing are on the roadmap below.
+> ⚠️ **Early development.** Working today: SQLite persistence, Xray gRPC
+> integration (VLESS + Reality), base64 subscription links, and **multi-node**
+> — a panel driving any number of node agents over mTLS. Traffic limits and
+> billing are next on the roadmap below.
 
 ## Quick start
 
@@ -67,6 +68,10 @@ curl http://localhost:8080/api/users
 | `POST` | `/api/users` | Create a user (`{"email": "..."}`) |
 | `GET` | `/api/users/{id}` | Get one user |
 | `DELETE` | `/api/users/{id}` | Delete a user |
+| `GET` | `/api/nodes` | List registered nodes |
+| `POST` | `/api/nodes` | Register a node (`{"name": "...", "address": "host:port"}`) |
+| `GET` | `/api/nodes/{id}` | Get one node |
+| `DELETE` | `/api/nodes/{id}` | Remove a node |
 | `GET` | `/sub/{id}` | Subscription content (base64 share links) for a VPN client |
 
 ## Configuration
@@ -86,9 +91,51 @@ All settings come from environment variables (sensible defaults shown):
 | `WISP_REALITY_SNI` | `www.microsoft.com` | Reality SNI |
 | `WISP_REALITY_SID` | _(empty)_ | Reality short id |
 | `WISP_REALITY_FP` | `chrome` | uTLS fingerprint |
+| `WISP_NODE_TLS_CERT` | _(empty)_ | Panel mTLS client cert. Empty → talk to nodes over plain HTTP (dev only) |
+| `WISP_NODE_TLS_KEY` | _(empty)_ | Panel mTLS client key |
+| `WISP_NODE_TLS_CA` | _(empty)_ | CA that verifies node server certs |
 
-With `WISP_XRAY_API` unset the panel runs fully without Xray, which is how you
-develop locally — every user operation is logged instead of sent to a proxy.
+The **node agent** (`cmd/node`) reads its own variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `WISP_AGENT_LISTEN` | `:8443` | Agent listen address |
+| `WISP_XRAY_API` | _(empty)_ | Local Xray gRPC API `host:port` |
+| `WISP_INBOUND_TAG` | `vless-reality` | Xray inbound tag |
+| `WISP_TLS_CERT` | _(empty)_ | Agent server cert. Empty → plain HTTP (dev only) |
+| `WISP_TLS_KEY` | _(empty)_ | Agent server key |
+| `WISP_TLS_CLIENT_CA` | _(empty)_ | CA that verifies the panel's client cert |
+
+With `WISP_XRAY_API` unset, both panel and agent run fully without Xray — every
+user operation is logged instead of sent to a proxy, which is how you develop
+locally.
+
+## Multi-node setup
+
+The panel controls each VPN server through a small **node agent** over mutual
+TLS. To wire one up:
+
+```bash
+# 1. Generate the CA + server + client certs (run once, on the panel host)
+go run ./cmd/wisp-certs -dir certs -host node1.example.com
+
+# 2. On the VPN server: run the agent with its server cert + the CA
+WISP_TLS_CERT=server.crt WISP_TLS_KEY=server.key WISP_TLS_CLIENT_CA=ca.crt \
+WISP_XRAY_API=127.0.0.1:10085 \
+  ./node          # listens on :8443 (mTLS)
+
+# 3. On the panel: run with the client cert + the CA
+WISP_NODE_TLS_CERT=client.crt WISP_NODE_TLS_KEY=client.key WISP_NODE_TLS_CA=ca.crt \
+  ./panel
+
+# 4. Register the node, then every user is pushed to it automatically
+curl -X POST http://localhost:8080/api/nodes \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"node1","address":"node1.example.com:8443"}'
+```
+
+User add/remove fans out to every enabled node, best-effort: a node that is
+down is logged and skipped, never blocking the operation.
 
 ## Architecture
 
@@ -96,27 +143,28 @@ Wisp is a **control plane / data plane** system:
 
 ```
 ┌─────────────────────────────────┐
-│   PANEL  (control plane)         │   Go API + DB + Web UI
+│   PANEL  (control plane)         │   Go API + SQLite + Web UI
 │   users · billing · limits       │
 └───────────────┬─────────────────┘
-                │ gRPC + mTLS
+                │ HTTPS + mTLS
       ┌─────────┼─────────┐
       ▼         ▼         ▼
   ┌───────┐ ┌───────┐ ┌───────┐
-  │ NODE  │ │ NODE  │ │ NODE  │       Go agent + Xray-core
-  │ agent │ │ agent │ │ agent │       on each VPN server
+  │ NODE  │ │ NODE  │ │ NODE  │       Go agent, drives local Xray
+  │ agent │ │ agent │ │ agent │       over gRPC on each VPN server
   └───────┘ └───────┘ └───────┘
 ```
 
-The panel never forwards VPN traffic itself — it tells each node's Xray which
-clients to accept, and reads traffic stats back. See [`internal/`](internal/)
-for the package layout.
+The panel never forwards VPN traffic itself — it tells each node's agent which
+clients to accept, and the agent applies them to the local Xray over gRPC.
+See [`internal/`](internal/) for the package layout and [`cmd/`](cmd/) for the
+`panel`, `node` and `wisp-certs` binaries.
 
 ## Roadmap
 
 - [x] **Phase 0** — Control-plane skeleton: HTTP API, user CRUD, in-memory store
 - [x] **Phase 1** — SQLite persistence + Xray gRPC integration (VLESS + Reality), subscription links
-- [ ] **Phase 2** — Multi-node: node agent, mTLS, user distribution
+- [x] **Phase 2** — Multi-node: node agent, mTLS, user distribution
 - [ ] **Phase 3** — Traffic limits & expiry, auto-disable
 - [ ] **Phase 4** — Billing: plans, payments, auto-renewal
 - [ ] **Phase 5** — White-label / resellers, web UI
@@ -126,9 +174,15 @@ for the package layout.
 ```bash
 make run      # start the panel
 make test     # run tests
-make build    # build ./bin/panel
+make build    # build all binaries into ./bin
 make vet      # static checks
 ```
+
+Binaries (`cmd/`):
+
+- **`panel`** — the control-plane API + (future) web UI
+- **`node`** — the node agent that runs next to Xray on each VPN server
+- **`wisp-certs`** — one-shot generator for the panel↔node mTLS certificates
 
 ## License
 

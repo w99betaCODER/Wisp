@@ -13,6 +13,15 @@
 .env
 *.local
 
+# TLS material — never commit certs or keys
+/certs/
+*.crt
+*.key
+*.pem
+
+# Logs
+*.log
+
 # OS / editor noise
 .DS_Store
 Thumbs.db

@@ -4,9 +4,11 @@
 run:
 	go run ./cmd/panel
 
-# Build a single static binary into ./bin.
+# Build all binaries into ./bin.
 build:
 	go build -o bin/panel ./cmd/panel
+	go build -o bin/node ./cmd/node
+	go build -o bin/wisp-certs ./cmd/wisp-certs
 
 # Run all tests.
 test:

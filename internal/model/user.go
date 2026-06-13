@@ -9,10 +9,10 @@ import "time"
 // VPN client actually authenticates with (for VLESS/VMess); Email is the
 // human-friendly identifier Xray uses to tag traffic statistics.
 type User struct {
-	ID        string     `json:"id"`                    // panel-internal primary key
-	Email     string     `json:"email"`                 // identifier used inside Xray
-	UUID      string     `json:"uuid"`                  // VLESS client UUID
-	Enabled   bool       `json:"enabled"`               // false = access revoked
-	CreatedAt time.Time  `json:"created_at"`            // when the account was created
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`  // nil = never expires
+	ID        string     `json:"id"`                   // panel-internal primary key
+	Email     string     `json:"email"`                // identifier used inside Xray
+	UUID      string     `json:"uuid"`                 // VLESS client UUID
+	Enabled   bool       `json:"enabled"`              // false = access revoked
+	CreatedAt time.Time  `json:"created_at"`           // when the account was created
+	ExpiresAt *time.Time `json:"expires_at,omitempty"` // nil = never expires
 }
