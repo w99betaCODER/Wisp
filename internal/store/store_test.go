@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wisp-panel/wisp/internal/model"
+	"github.com/w99betaCODER/Wisp/internal/model"
 )
 
 func TestMemoryStore_CRUD(t *testing.T) {

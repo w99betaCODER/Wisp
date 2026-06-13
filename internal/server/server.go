@@ -4,19 +4,21 @@ package server
 import (
 	"net/http"
 
-	"github.com/wisp-panel/wisp/internal/config"
-	"github.com/wisp-panel/wisp/internal/store"
+	"github.com/w99betaCODER/Wisp/internal/config"
+	"github.com/w99betaCODER/Wisp/internal/store"
+	"github.com/w99betaCODER/Wisp/internal/xray"
 )
 
 // Server holds the dependencies shared by all HTTP handlers.
 type Server struct {
 	cfg   config.Config
 	store store.Store
+	xray  xray.Client
 }
 
 // New constructs a Server with its dependencies injected.
-func New(cfg config.Config, st store.Store) *Server {
-	return &Server{cfg: cfg, store: st}
+func New(cfg config.Config, st store.Store, xc xray.Client) *Server {
+	return &Server{cfg: cfg, store: st, xray: xc}
 }
 
 // Routes builds the HTTP handler with every route registered.
@@ -33,6 +35,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/users", s.handleCreateUser)
 	mux.HandleFunc("GET /api/users/{id}", s.handleGetUser)
 	mux.HandleFunc("DELETE /api/users/{id}", s.handleDeleteUser)
+
+	// Subscription link consumed directly by VPN clients.
+	mux.HandleFunc("GET /sub/{id}", s.handleSubscription)
 
 	// Every request passes through the logging middleware first.
 	return logging(mux)

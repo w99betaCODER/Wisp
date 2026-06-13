@@ -11,7 +11,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/wisp-panel/wisp/internal/model"
+	"github.com/w99betaCODER/Wisp/internal/model"
 )
 
 // ErrNotFound is returned when a requested record does not exist.

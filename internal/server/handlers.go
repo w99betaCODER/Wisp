@@ -3,12 +3,14 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
-	"github.com/wisp-panel/wisp/internal/model"
-	"github.com/wisp-panel/wisp/internal/store"
-	"github.com/wisp-panel/wisp/internal/util"
+	"github.com/w99betaCODER/Wisp/internal/model"
+	"github.com/w99betaCODER/Wisp/internal/store"
+	"github.com/w99betaCODER/Wisp/internal/subscription"
+	"github.com/w99betaCODER/Wisp/internal/util"
 )
 
 // handleHealth is a liveness probe used by Docker, load balancers and uptime checks.
@@ -54,7 +56,15 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}
-	// TODO(phase 1): push this client into Xray over gRPC so it works immediately.
+
+	// Push the client into Xray so it can connect immediately. If Xray rejects
+	// it, roll back the DB insert so the two never drift out of sync.
+	if err := s.xray.AddUser(r.Context(), s.cfg.InboundTag, user.Email, user.UUID, s.cfg.Node.Flow); err != nil {
+		_ = s.store.DeleteUser(user.ID)
+		log.Printf("create user: xray add failed, rolled back: %v", err)
+		writeError(w, http.StatusBadGateway, "failed to add user to xray")
+		return
+	}
 	writeJSON(w, http.StatusCreated, user)
 }
 
@@ -76,15 +86,55 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 // handleDeleteUser removes a user by id.
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	err := s.store.DeleteUser(id)
+
+	// Fetch first so we know the email Xray needs to drop the client.
+	user, err := s.store.GetUser(id)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "user not found")
 		return
 	}
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+
+	if err := s.store.DeleteUser(id); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete user")
 		return
 	}
-	// TODO(phase 1): remove this client from Xray over gRPC.
+
+	// The user is already gone from the DB; a failure here only means a stale
+	// entry lingers in Xray, so we log it rather than failing the request.
+	if err := s.xray.RemoveUser(r.Context(), s.cfg.InboundTag, user.Email); err != nil {
+		log.Printf("delete user: xray remove failed: %v", err)
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSubscription returns the base64-encoded share links for a user, the
+// content a VPN client fetches from its subscription URL.
+//
+// NOTE: the user id doubles as the subscription token for now. A dedicated,
+// unguessable token is a Phase 2 hardening task.
+func (s *Server) handleSubscription(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	user, err := s.store.GetUser(id)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "subscription not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load subscription")
+		return
+	}
+
+	link := subscription.VLESSLink(user, s.cfg.Node)
+	content := subscription.Encode([]string{link})
+
+	// Plain text + headers that clients read for the profile name.
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Profile-Title", "Wisp")
+	if _, err := w.Write([]byte(content)); err != nil {
+		log.Printf("subscription write: %v", err)
+	}
 }

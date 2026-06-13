@@ -15,20 +15,30 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/wisp-panel/wisp/internal/config"
-	"github.com/wisp-panel/wisp/internal/server"
-	"github.com/wisp-panel/wisp/internal/store"
+	"github.com/w99betaCODER/Wisp/internal/config"
+	"github.com/w99betaCODER/Wisp/internal/server"
+	"github.com/w99betaCODER/Wisp/internal/store"
+	"github.com/w99betaCODER/Wisp/internal/xray"
 )
 
 func main() {
 	cfg := config.Load()
 
-	// For now the data lives in memory. Swapping this for a SQLite-backed
-	// store later changes only this one line — everything else depends on
-	// the store.Store interface, not the concrete type.
-	st := store.NewMemoryStore()
+	// Persist users in SQLite. Because the rest of the app depends on the
+	// store.Store interface (not the concrete type), this is the only line
+	// that knows we use SQLite at all.
+	st, err := store.NewSQLiteStore(cfg.DBPath)
+	if err != nil {
+		log.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
 
-	srv := server.New(cfg, st)
+	// Connect to Xray if configured; otherwise fall back to a no-op client so
+	// the panel still runs (users are stored but not pushed to a proxy).
+	xc := newXrayClient(cfg)
+	defer xc.Close()
+
+	srv := server.New(cfg, st, xc)
 
 	httpServer := &http.Server{
 		Addr:         cfg.Addr,
@@ -57,4 +67,19 @@ func main() {
 	if err := httpServer.Shutdown(ctx); err != nil {
 		log.Printf("graceful shutdown failed: %v", err)
 	}
+}
+
+// newXrayClient returns a real gRPC client when WISP_XRAY_API is configured,
+// or a no-op client otherwise so the panel runs without an Xray instance.
+func newXrayClient(cfg config.Config) xray.Client {
+	if cfg.XrayAPIAddr == "" {
+		log.Println("WISP_XRAY_API not set — using no-op Xray client (users are stored but not pushed to Xray)")
+		return xray.NewNoopClient()
+	}
+	gc, err := xray.Dial(cfg.XrayAPIAddr)
+	if err != nil {
+		log.Fatalf("connect to xray: %v", err)
+	}
+	log.Printf("connected to xray API at %s", cfg.XrayAPIAddr)
+	return gc
 }
