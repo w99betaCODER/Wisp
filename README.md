@@ -176,6 +176,21 @@ verifying its webhook signature and then calling the same `billing.Apply` logic
 — so adding Cryptomus, YooKassa, Telegram Payments, Stripe, etc. is a small,
 self-contained change.
 
+## Production deployment
+
+For a real setup (panel + Xray nodes over mTLS, Docker or systemd), follow
+**[deploy/DEPLOY.md](deploy/DEPLOY.md)**. It includes ready-made compose files,
+systemd units and env templates.
+
+Verify the integration against a **real Xray** before trusting it:
+
+```bash
+./deploy/verify-xray/verify.sh        # Linux  (or pwsh verify.ps1 on Windows)
+```
+
+This boots a throwaway Xray, drives it through the panel, and prints **PASS**
+if the real `AddUser`/`RemoveUser` gRPC calls work end to end.
+
 ## Architecture
 
 Wisp is a **control plane / data plane** system:

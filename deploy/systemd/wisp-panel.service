@@ -1,0 +1,19 @@
+[Unit]
+Description=Wisp VPN panel
+After=network.target
+
+[Service]
+Type=simple
+User=wisp
+WorkingDirectory=/opt/wisp
+EnvironmentFile=/etc/wisp/panel.env
+ExecStart=/opt/wisp/panel
+Restart=on-failure
+RestartSec=3
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

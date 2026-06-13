@@ -1,0 +1,29 @@
+{
+  "log": { "loglevel": "warning" },
+  "api": { "tag": "api", "services": ["HandlerService", "StatsService"] },
+  "stats": {},
+  "policy": {
+    "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true } }
+  },
+  "inbounds": [
+    {
+      "tag": "api",
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": { "address": "127.0.0.1" }
+    },
+    {
+      "tag": "vless-in",
+      "listen": "127.0.0.1",
+      "port": 10443,
+      "protocol": "vless",
+      "settings": { "clients": [], "decryption": "none" },
+      "streamSettings": { "network": "tcp" }
+    }
+  ],
+  "outbounds": [{ "protocol": "freedom" }],
+  "routing": {
+    "rules": [{ "type": "field", "inboundTag": ["api"], "outboundTag": "api" }]
+  }
+}

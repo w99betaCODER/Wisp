@@ -1,0 +1,35 @@
+# A complete VPN node: Xray-core + the Wisp node agent on one server.
+#
+# Both run on the host network so the agent reaches Xray's API at
+# 127.0.0.1:10085 and Xray can bind :443 directly.
+#
+#   1. put your mTLS files (server.crt, server.key, ca.crt) in ./certs
+#   2. set the Reality privateKey in xray-config.json (xray x25519)
+#   3. docker compose up -d
+services:
+  xray:
+    image: ghcr.io/xtls/xray-core:latest
+    container_name: xray
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./xray-config.json:/etc/xray/config.json:ro
+    command: ["run", "-c", "/etc/xray/config.json"]
+
+  node:
+    build:
+      context: ../..
+      dockerfile: deploy/node/Dockerfile
+    container_name: wisp-node
+    restart: unless-stopped
+    network_mode: host
+    depends_on: [xray]
+    environment:
+      WISP_AGENT_LISTEN: ":8443"
+      WISP_XRAY_API: "127.0.0.1:10085"
+      WISP_INBOUND_TAG: "vless-reality"
+      WISP_TLS_CERT: "/certs/server.crt"
+      WISP_TLS_KEY: "/certs/server.key"
+      WISP_TLS_CLIENT_CA: "/certs/ca.crt"
+    volumes:
+      - ./certs:/certs:ro

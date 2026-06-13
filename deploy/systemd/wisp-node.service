@@ -1,0 +1,16 @@
+[Unit]
+Description=Wisp node agent
+After=network.target
+
+[Service]
+Type=simple
+User=wisp
+WorkingDirectory=/opt/wisp
+EnvironmentFile=/etc/wisp/node.env
+ExecStart=/opt/wisp/node
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
