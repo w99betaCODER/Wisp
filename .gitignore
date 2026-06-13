@@ -1,0 +1,20 @@
+# Compiled binaries
+/bin/
+*.exe
+/panel
+/node
+
+# Local data
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment / secrets
+.env
+*.local
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

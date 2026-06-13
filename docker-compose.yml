@@ -1,0 +1,9 @@
+services:
+  panel:
+    build: .
+    container_name: wisp-panel
+    ports:
+      - "8080:8080"
+    environment:
+      WISP_ADDR: ":8080"
+    restart: unless-stopped
