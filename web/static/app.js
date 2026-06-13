@@ -120,7 +120,8 @@ function planControl(userId) {
   if (!state.plans.length) return "";
   const opts = state.plans.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
   return `<select class="plan-sel" id="sel-${userId}">${opts}</select>
-    <button class="btn ghost" onclick="applyPlan('${userId}')" title="Sell / renew this plan">apply</button>`;
+    <button class="btn ghost" onclick="applyPlan('${userId}')" title="Sell / renew this plan">apply</button>
+    <button class="btn ghost" onclick="setAutoRenew('${userId}')" title="Auto-renew with the selected plan from balance">auto</button>`;
 }
 
 function renderUsers(users) {
@@ -128,13 +129,14 @@ function renderUsers(users) {
   document.getElementById("users-empty").style.display = users.length ? "none" : "block";
   tb.innerHTML = users.map((u) => `
     <tr>
-      <td>${esc(u.email)}</td>
+      <td>${esc(u.email)}${u.balance ? ` · <span class="mono">$${(u.balance / 100).toFixed(2)}</span>` : ""}${u.auto_renew ? ` <span class="badge proto" title="auto-renew on">♻</span>` : ""}</td>
       <td><span class="badge ${u.enabled ? "on" : "off"}">${u.enabled ? "active" : "disabled"}</span></td>
       <td>${usageCell(u)}</td>
       <td>${fmtDate(u.expires_at)}</td>
       <td class="mono">${esc(u.uuid.slice(0, 8))}…</td>
       <td><div class="row-actions">
         ${planControl(u.id)}
+        <button class="btn ghost" onclick="topUp('${u.id}')" title="Top up balance">+$</button>
         <button class="btn ghost" onclick="copySub('${u.id}')" title="Copy subscription link">link</button>
         <button class="btn ghost" onclick="resetUser('${u.id}')" title="Reset traffic & re-enable">reset</button>
         <button class="btn ghost danger" onclick="deleteUser('${u.id}','${esc(u.email)}')">del</button>
@@ -267,6 +269,28 @@ async function applyPlan(userId) {
     const order = await api("POST", "/api/orders", { user_id: userId, plan_id: planId });
     await api("POST", "/api/orders/" + order.id + "/pay");
     toast("Plan applied & paid");
+    load();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function setAutoRenew(userId) {
+  const sel = document.getElementById("sel-" + userId);
+  const planId = sel ? sel.value : "";
+  try {
+    await api("POST", "/api/users/" + userId + "/autorenew", { plan_id: planId });
+    toast(planId ? "Auto-renew enabled" : "Auto-renew off");
+    load();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function topUp(userId) {
+  const v = prompt("Top up balance — amount in USD:");
+  if (!v) return;
+  const cents = Math.round(parseFloat(v) * 100);
+  if (!cents || cents < 0) return;
+  try {
+    await api("POST", "/api/users/" + userId + "/topup", { amount_cents: cents });
+    toast("Balance topped up");
     load();
   } catch (e) { toast(e.message, true); }
 }

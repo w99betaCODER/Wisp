@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS users (
     enabled    INTEGER NOT NULL DEFAULT 1,
     data_limit INTEGER NOT NULL DEFAULT 0,
     used       INTEGER NOT NULL DEFAULT 0,
+    balance    INTEGER NOT NULL DEFAULT 0,
+    auto_renew TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP NOT NULL,
     expires_at TIMESTAMP
 );
@@ -93,6 +95,8 @@ CREATE TABLE IF NOT EXISTS orders (
 	for _, ddl := range []string{
 		`ALTER TABLE users ADD COLUMN data_limit INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE users ADD COLUMN used INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN balance INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN auto_renew TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE nodes ADD COLUMN protocol TEXT NOT NULL DEFAULT 'vless'`,
 		`ALTER TABLE nodes ADD COLUMN public_host TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE nodes ADD COLUMN public_port INTEGER NOT NULL DEFAULT 443`,
@@ -107,7 +111,7 @@ CREATE TABLE IF NOT EXISTS orders (
 // ListUsers returns all users ordered by creation time (oldest first).
 func (s *SQLiteStore) ListUsers() ([]model.User, error) {
 	rows, err := s.db.Query(`
-		SELECT id, email, uuid, enabled, data_limit, used, created_at, expires_at
+		SELECT id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at
 		FROM users ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
@@ -128,7 +132,7 @@ func (s *SQLiteStore) ListUsers() ([]model.User, error) {
 // GetUser returns the user with the given id, or ErrNotFound.
 func (s *SQLiteStore) GetUser(id string) (model.User, error) {
 	row := s.db.QueryRow(`
-		SELECT id, email, uuid, enabled, data_limit, used, created_at, expires_at
+		SELECT id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at
 		FROM users WHERE id = ?`, id)
 
 	u, err := scanUser(row)
@@ -144,9 +148,9 @@ func (s *SQLiteStore) GetUser(id string) (model.User, error) {
 // CreateUser inserts a new user.
 func (s *SQLiteStore) CreateUser(u model.User) error {
 	_, err := s.db.Exec(`
-		INSERT INTO users (id, email, uuid, enabled, data_limit, used, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		u.ID, u.Email, u.UUID, u.Enabled, u.DataLimit, u.Used, u.CreatedAt, nullTime(u.ExpiresAt))
+		INSERT INTO users (id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		u.ID, u.Email, u.UUID, u.Enabled, u.DataLimit, u.Used, u.Balance, u.AutoRenew, u.CreatedAt, nullTime(u.ExpiresAt))
 	if err != nil {
 		return fmt.Errorf("create user: %w", err)
 	}
@@ -157,9 +161,9 @@ func (s *SQLiteStore) CreateUser(u model.User) error {
 func (s *SQLiteStore) UpdateUser(u model.User) error {
 	res, err := s.db.Exec(`
 		UPDATE users
-		SET email = ?, uuid = ?, enabled = ?, data_limit = ?, used = ?, expires_at = ?
+		SET email = ?, uuid = ?, enabled = ?, data_limit = ?, used = ?, balance = ?, auto_renew = ?, expires_at = ?
 		WHERE id = ?`,
-		u.Email, u.UUID, u.Enabled, u.DataLimit, u.Used, nullTime(u.ExpiresAt), u.ID)
+		u.Email, u.UUID, u.Enabled, u.DataLimit, u.Used, u.Balance, u.AutoRenew, nullTime(u.ExpiresAt), u.ID)
 	if err != nil {
 		return fmt.Errorf("update user: %w", err)
 	}
@@ -431,7 +435,7 @@ func scanUser(sc scanner) (model.User, error) {
 		u       model.User
 		expires sql.NullTime
 	)
-	if err := sc.Scan(&u.ID, &u.Email, &u.UUID, &u.Enabled, &u.DataLimit, &u.Used, &u.CreatedAt, &expires); err != nil {
+	if err := sc.Scan(&u.ID, &u.Email, &u.UUID, &u.Enabled, &u.DataLimit, &u.Used, &u.Balance, &u.AutoRenew, &u.CreatedAt, &expires); err != nil {
 		return model.User{}, err
 	}
 	if expires.Valid {

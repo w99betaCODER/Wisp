@@ -33,6 +33,8 @@ type createUserRequest struct {
 	Email     string     `json:"email"`
 	DataLimit int64      `json:"data_limit"` // bytes; 0 or omitted = unlimited
 	ExpiresAt *time.Time `json:"expires_at"` // RFC3339; omitted = never expires
+	Balance   int64      `json:"balance"`    // prepaid balance, minor units
+	AutoRenew string     `json:"auto_renew"` // plan id to auto-renew with
 }
 
 // handleCreateUser creates a new VPN user, generating its id and UUID.
@@ -53,6 +55,8 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		UUID:      util.NewUUID(),
 		Enabled:   true,
 		DataLimit: req.DataLimit,
+		Balance:   req.Balance,
+		AutoRenew: req.AutoRenew,
 		CreatedAt: time.Now().UTC(),
 		ExpiresAt: req.ExpiresAt,
 	}
@@ -153,6 +157,65 @@ func (s *Server) handleResetUser(w http.ResponseWriter, r *http.Request) {
 			log.Printf("reset user: local xray add failed: %v", err)
 		}
 		s.cluster.AddUser(user.Email, user.UUID, s.cfg.Node.Flow)
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
+// handleTopUp adds to a user's prepaid balance (used for auto-renewal).
+func (s *Server) handleTopUp(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		AmountCents int64 `json:"amount_cents"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	user, err := s.store.GetUser(r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	user.Balance += req.AmountCents
+	if err := s.store.UpdateUser(user); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update user")
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
+// handleSetAutoRenew sets (or clears, with an empty plan_id) the plan a user is
+// auto-renewed with from their balance when they expire or run out of quota.
+func (s *Server) handleSetAutoRenew(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PlanID string `json:"plan_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if req.PlanID != "" {
+		if _, err := s.store.GetPlan(req.PlanID); errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, "plan not found")
+			return
+		}
+	}
+	user, err := s.store.GetUser(r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	user.AutoRenew = req.PlanID
+	if err := s.store.UpdateUser(user); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update user")
+		return
 	}
 	writeJSON(w, http.StatusOK, user)
 }

@@ -74,6 +74,48 @@ func TestSweep_DisablesExpired(t *testing.T) {
 	}
 }
 
+func TestSweep_AutoRenewsFromBalance(t *testing.T) {
+	st := store.NewMemoryStore()
+	_ = st.CreatePlan(model.Plan{ID: "p", DurationDays: 30, DataLimit: 1000, PriceCents: 500})
+	past := time.Now().Add(-time.Hour)
+	_ = st.CreateUser(model.User{ID: "u", Email: "a", Enabled: true, ExpiresAt: &past, Balance: 1200, AutoRenew: "p"})
+
+	fx := &fakeXray{}
+	New(st, fx, cluster.New(st, nil), config.Config{InboundTag: "t"}).Sweep(context.Background())
+
+	u, _ := st.GetUser("u")
+	if !u.Enabled {
+		t.Fatal("auto-renewed user should stay enabled")
+	}
+	if u.Balance != 700 { // 1200 - 500
+		t.Fatalf("balance = %d, want 700", u.Balance)
+	}
+	if u.DataLimit != 1000 || u.Used != 0 {
+		t.Fatalf("quota not reset on renew: %+v", u)
+	}
+	if u.ExpiresAt == nil || !u.ExpiresAt.After(time.Now().UTC().AddDate(0, 0, 29)) {
+		t.Fatalf("expiry not extended ~30d: %v", u.ExpiresAt)
+	}
+}
+
+func TestSweep_AutoRenewInsufficientBalanceDisables(t *testing.T) {
+	st := store.NewMemoryStore()
+	_ = st.CreatePlan(model.Plan{ID: "p", DurationDays: 30, PriceCents: 500})
+	past := time.Now().Add(-time.Hour)
+	_ = st.CreateUser(model.User{ID: "u", Email: "a", Enabled: true, ExpiresAt: &past, Balance: 100, AutoRenew: "p"})
+
+	fx := &fakeXray{}
+	New(st, fx, cluster.New(st, nil), config.Config{InboundTag: "t"}).Sweep(context.Background())
+
+	u, _ := st.GetUser("u")
+	if u.Enabled {
+		t.Fatal("user with insufficient balance should be disabled")
+	}
+	if u.Balance != 100 {
+		t.Fatalf("balance should be untouched, got %d", u.Balance)
+	}
+}
+
 func TestSweep_KeepsHealthyUser(t *testing.T) {
 	got, fx := sweepWith(t,
 		model.User{ID: "3", Email: "c", Enabled: true, DataLimit: 1000},

@@ -80,6 +80,8 @@ curl http://localhost:8080/api/users
 | `GET` | `/api/users/{id}` | Get one user |
 | `DELETE` | `/api/users/{id}` | Delete a user |
 | `POST` | `/api/users/{id}/reset` | Reset traffic to 0 and re-enable the user |
+| `POST` | `/api/users/{id}/topup` | Add to the user's prepaid balance (`{amount_cents}`) |
+| `POST` | `/api/users/{id}/autorenew` | Set/clear the auto-renew plan (`{plan_id}`) |
 | `GET` | `/api/nodes` | List registered nodes |
 | `POST` | `/api/nodes` | Register a node (`{"name","address","protocol","public_host","public_port"}`) |
 | `GET` | `/api/nodes/{id}` | Get one node |
@@ -198,6 +200,11 @@ then settles the order through the same `billing.Apply` logic. Adapting a
 specific gateway (Cryptomus, YooKassa, Telegram Payments, Stripe, …) is just
 mapping its payload onto `{order_id, status}`.
 
+**Auto-renewal** works from a prepaid balance: top a user up, point them at a
+plan with `/autorenew`, and when they expire or run out of quota the enforcer
+deducts the plan price from their balance and renews them automatically (and
+disables them once the balance runs dry).
+
 ## Production deployment
 
 For a real setup (panel + Xray nodes over mTLS, Docker or systemd), follow
@@ -246,7 +253,8 @@ See [`internal/`](internal/) for the package layout and [`cmd/`](cmd/) for the
 - [x] **Phase 4** — Billing: plans, orders, apply-on-payment
 - [x] **Auth & white-label** — username/password login, brandable name/accent, HMAC payment webhooks
 - [x] **Phase 6** — Multiprotocol: per-node VLESS / VMess / Trojan, protocol-aware subscription links
-- [ ] **Phase 5** — Multi-tenant resellers, recurring auto-renewal
+- [x] **Auto-renewal** — prepaid balance; the enforcer renews from balance on expiry/quota
+- [ ] **Phase 5** — Multi-tenant resellers (multiple admins, scoped users)
 
 ## Development
 

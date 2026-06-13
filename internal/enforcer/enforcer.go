@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/w99betaCODER/Wisp/internal/billing"
 	"github.com/w99betaCODER/Wisp/internal/cluster"
 	"github.com/w99betaCODER/Wisp/internal/config"
 	"github.com/w99betaCODER/Wisp/internal/model"
@@ -77,19 +78,50 @@ func (e *Enforcer) Sweep(ctx context.Context) {
 		}
 	}
 
-	// Disable anyone over quota or past expiry.
+	// Auto-renew or disable anyone over quota or past expiry.
 	now := time.Now().UTC()
 	for _, u := range byEmail {
 		if !u.Enabled {
 			continue
 		}
-		switch {
-		case u.DataLimit > 0 && u.Used >= u.DataLimit:
-			e.disable(ctx, u, "data limit reached")
-		case u.ExpiresAt != nil && now.After(*u.ExpiresAt):
-			e.disable(ctx, u, "subscription expired")
+		overQuota := u.DataLimit > 0 && u.Used >= u.DataLimit
+		expired := u.ExpiresAt != nil && now.After(*u.ExpiresAt)
+		if !overQuota && !expired {
+			continue
 		}
+		if e.tryRenew(ctx, u) {
+			continue
+		}
+		reason := "subscription expired"
+		if overQuota {
+			reason = "data limit reached"
+		}
+		e.disable(ctx, u, reason)
 	}
+}
+
+// tryRenew auto-renews a user from their prepaid balance when they have an
+// auto-renew plan set and enough balance to cover it. Returns true on renewal.
+func (e *Enforcer) tryRenew(ctx context.Context, u model.User) bool {
+	if u.AutoRenew == "" {
+		return false
+	}
+	plan, err := e.store.GetPlan(u.AutoRenew)
+	if err != nil {
+		log.Printf("enforcer: auto-renew %q: plan %q: %v", u.Email, u.AutoRenew, err)
+		return false
+	}
+	if u.Balance < plan.PriceCents {
+		log.Printf("enforcer: auto-renew %q: insufficient balance (%d < %d)", u.Email, u.Balance, plan.PriceCents)
+		return false
+	}
+	u.Balance -= plan.PriceCents
+	if err := billing.Grant(ctx, e.store, e.xray, e.cluster, e.cfg, u, plan); err != nil {
+		log.Printf("enforcer: auto-renew %q: %v", u.Email, err)
+		return false
+	}
+	log.Printf("enforcer: auto-renewed %q with plan %q (balance left %d)", u.Email, plan.Name, u.Balance)
+	return true
 }
 
 // collectDeltas merges traffic deltas from the local Xray and all nodes.

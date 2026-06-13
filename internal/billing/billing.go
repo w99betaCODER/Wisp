@@ -17,11 +17,7 @@ import (
 	"github.com/w99betaCODER/Wisp/internal/xray"
 )
 
-// Apply settles order: it loads the order's user and plan, grants the plan,
-// and re-syncs the user to the local Xray and all nodes if they had lapsed.
-//
-// Expiry is extended from whichever is later — now or the user's current
-// expiry — so renewing early never loses remaining days.
+// Apply settles order: it loads the order's user and plan and grants the plan.
 func Apply(ctx context.Context, st store.Store, xc xray.Client, cl *cluster.Cluster, cfg config.Config, order model.Order) error {
 	user, err := st.GetUser(order.UserID)
 	if err != nil {
@@ -31,7 +27,14 @@ func Apply(ctx context.Context, st store.Store, xc xray.Client, cl *cluster.Clus
 	if err != nil {
 		return fmt.Errorf("billing: load plan %q: %w", order.PlanID, err)
 	}
+	return Grant(ctx, st, xc, cl, cfg, user, plan)
+}
 
+// Grant applies a plan to a user: extends the expiry (from whichever is later —
+// now or the current expiry), (re)sets the data quota, clears usage, re-enables
+// access and re-syncs to the local Xray and nodes if access had lapsed. Other
+// fields on user (e.g. a deducted balance) are persisted as passed in.
+func Grant(ctx context.Context, st store.Store, xc xray.Client, cl *cluster.Cluster, cfg config.Config, user model.User, plan model.Plan) error {
 	now := time.Now().UTC()
 	base := now
 	if user.ExpiresAt != nil && user.ExpiresAt.After(now) {
