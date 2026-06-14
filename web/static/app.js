@@ -1,6 +1,8 @@
 "use strict";
 
-const state = { plans: [], orders: [] };
+const state = { plans: [], orders: [], role: "", username: "" };
+
+const isSuper = () => state.role === "super";
 
 // --- tiny helpers ---------------------------------------------------------
 
@@ -57,10 +59,38 @@ async function doLogin(ev) {
     }
     document.getElementById("login").classList.add("hidden");
     toast("Signed in");
+    try { applyIdentity(await api("GET", "/api/me")); } catch (_) {}
     load();
   } catch (e) {
     toast("Cannot reach server: " + e.message, true);
   }
+}
+
+// applyIdentity reflects the signed-in admin's role across the UI: it stamps a
+// body class that CSS uses to hide super-only sections from resellers, and
+// fills the header identity chip.
+function applyIdentity(me) {
+  state.role = (me && me.role) || "super"; // open (dev) mode acts as super
+  state.username = (me && me.username) || "";
+  document.body.classList.toggle("role-super", isSuper());
+  document.body.classList.toggle("role-reseller", !isSuper());
+
+  // Hide super-admin-only sections (nodes, admins, plan/admin management).
+  document.querySelectorAll(".super-only").forEach((el) => { el.hidden = !isSuper(); });
+
+  const bar = document.getElementById("whoami");
+  if (me && me.auth_enabled && state.username) {
+    document.getElementById("whoami-user").textContent = state.username;
+    document.getElementById("whoami-role").textContent = state.role;
+    bar.hidden = false;
+  } else {
+    bar.hidden = true; // open mode: no one to sign out
+  }
+}
+
+async function logout() {
+  try { await api("POST", "/api/logout"); } catch (_) {}
+  location.reload();
 }
 
 function toast(msg, isErr) {
@@ -154,7 +184,7 @@ function renderPlans(plans) {
       <td>${p.duration_days} days</td>
       <td>${p.data_limit ? fmtBytes(p.data_limit) : "∞"}</td>
       <td><div class="row-actions">
-        <button class="btn ghost danger" onclick="deletePlan('${p.id}','${esc(p.name)}')">del</button>
+        ${isSuper() ? `<button class="btn ghost danger" onclick="deletePlan('${p.id}','${esc(p.name)}')">del</button>` : ""}
       </div></td>
     </tr>`).join("");
 }
@@ -170,6 +200,21 @@ function renderNodes(nodes) {
       <td><span class="badge ${n.enabled ? "on" : "off"}">${n.enabled ? "enabled" : "disabled"}</span></td>
       <td><div class="row-actions">
         <button class="btn ghost danger" onclick="deleteNode('${n.id}','${esc(n.name)}')">del</button>
+      </div></td>
+    </tr>`).join("");
+}
+
+function renderAdmins(admins) {
+  const tb = document.querySelector("#admins tbody");
+  if (!tb) return;
+  document.getElementById("admins-empty").style.display = admins.length ? "none" : "block";
+  tb.innerHTML = admins.map((a) => `
+    <tr>
+      <td class="mono">${esc(a.username)}${a.username === state.username ? ' <span class="badge on">you</span>' : ""}</td>
+      <td><span class="badge proto">${esc(a.role)}</span></td>
+      <td>${fmtDate(a.created_at)}</td>
+      <td><div class="row-actions">
+        ${a.username === state.username ? "" : `<button class="btn ghost danger" onclick="deleteAdmin('${a.id}','${esc(a.username)}')">del</button>`}
       </div></td>
     </tr>`).join("");
 }
@@ -204,6 +249,9 @@ async function load() {
     renderUsers(users || []);
     renderNodes(nodes || []);
     renderStats(users || [], nodes || [], state.orders);
+    if (isSuper()) {
+      try { renderAdmins((await api("GET", "/api/admins")) || []); } catch (_) {}
+    }
   } catch (e) {
     if (e.message !== "auth") toast("Load failed: " + e.message, true);
   }
@@ -259,6 +307,28 @@ async function createNode(ev) {
     toast("Node registered");
     load();
   } catch (e) { toast(e.message, true); }
+}
+
+async function createAdmin(ev) {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    username: f.username.value.trim(),
+    password: f.password.value,
+    role: f.role.value,
+  };
+  try {
+    await api("POST", "/api/admins", body);
+    f.reset(); toggle("admin-form");
+    toast("Admin created");
+    load();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function deleteAdmin(id, username) {
+  if (!confirm("Delete admin " + username + "?")) return;
+  try { await api("DELETE", "/api/admins/" + id); toast("Admin deleted"); load(); }
+  catch (e) { toast(e.message, true); }
 }
 
 // applyPlan creates an order for the chosen plan and immediately settles it,
@@ -318,9 +388,10 @@ async function deleteNode(id, name) {
   catch (e) { toast(e.message, true); }
 }
 
-// boot: apply branding (public), then load data and auto-refresh.
+// boot: apply branding (public), resolve who we are, then load and auto-refresh.
 async function boot() {
   try { applyBranding(await api("GET", "/api/branding")); } catch (_) {}
+  try { applyIdentity(await api("GET", "/api/me")); } catch (_) { return; } // 401 → login overlay
   load();
   setInterval(load, 5000);
 }

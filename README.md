@@ -30,7 +30,7 @@ No Python virtualenvs, no `node_modules` on your server — just one binary.
 | Clean, modern UI | ⚠️ | ⚠️ | ✅ |
 | Built-in billing | ❌ | ❌ | ✅ |
 | White-label branding | ❌ | ❌ | ✅ |
-| Multi-tenant resellers | ❌ | ❌ | ✅ *(planned)* |
+| Multi-tenant resellers | ❌ | ❌ | ✅ |
 
 Wisp's two principles are **simplicity** and **functionality**: trivial to install,
 powerful enough to run a real VPN business.
@@ -93,14 +93,38 @@ curl http://localhost:8080/api/users
 | `POST` | `/api/orders` | Open an order (`{"user_id","plan_id"}`) |
 | `POST` | `/api/orders/{id}/pay` | Settle an order and apply its plan to the user |
 | `POST` | `/api/webhook/{provider}` | Payment-gateway callback (HMAC-signed) that settles an order |
+| `GET` | `/api/admins` | List admins *(super-admin only)* |
+| `POST` | `/api/admins` | Create an admin (`{"username","password","role"}`) *(super-admin only)* |
+| `DELETE` | `/api/admins/{id}` | Remove an admin *(super-admin only)* |
 | `POST` | `/api/login` | Sign in with `{username, password}` → session cookie |
+| `POST` | `/api/logout` | Clear the session cookie |
+| `GET` | `/api/me` | Identity + role of the signed-in admin (drives the role-aware UI) |
 | `GET` | `/api/branding` | White-label settings (public) |
 | `GET` | `/sub/{id}` | Subscription content (base64 share links) for a VPN client |
 
 Set `WISP_ADMIN_PASS` to require sign-in: the dashboard shows a username/password
-login (`POST /api/login` sets an httpOnly session cookie). Scripts can instead
-send `Authorization: Bearer <WISP_API_TOKEN>`. The webhook is authenticated by
-its HMAC signature, and `/api/branding` is public.
+login (`POST /api/login` sets an httpOnly session cookie signed with
+`WISP_SESSION_SECRET`). Scripts can instead send `Authorization: Bearer
+<WISP_API_TOKEN>` (always treated as a super-admin). The webhook is authenticated
+by its HMAC signature, and `/api/branding` is public.
+
+### Roles & resellers
+
+Wisp is multi-tenant. The super-admin (bootstrapped from `WISP_ADMIN_USER` /
+`WISP_ADMIN_PASS`) runs the infrastructure — nodes, plans and other admins — and
+sees every user. From the **Admins** card it can create **reseller** accounts.
+
+A reseller signs in with their own username/password and:
+
+- sees and manages **only the users they create** (`owner_id` scoping);
+- can sell/renew plans and top up balances for their own users;
+- **cannot** see other resellers' users, manage nodes or plans, or create admins
+  (those endpoints return `403`; another reseller's user returns `404`).
+
+Passwords are stored as bcrypt hashes. With `WISP_ADMIN_PASS` empty the panel
+runs **open** (no login) and every request acts as a super-admin — convenient for
+local development. Changing `WISP_ADMIN_PASS` rotates the super-admin password on
+the next restart.
 
 ## Configuration
 
@@ -124,9 +148,10 @@ All settings come from environment variables (sensible defaults shown):
 | `WISP_NODE_TLS_KEY` | _(empty)_ | Panel mTLS client key |
 | `WISP_NODE_TLS_CA` | _(empty)_ | CA that verifies node server certs |
 | `WISP_ENFORCE_INTERVAL` | `60` | Seconds between traffic-accounting + quota/expiry sweeps |
-| `WISP_ADMIN_USER` | `admin` | Dashboard login username |
-| `WISP_ADMIN_PASS` | _(empty)_ | Dashboard login password. Empty → no login (dev only) |
-| `WISP_API_TOKEN` | _(empty)_ | Optional Bearer token for scripts/API clients (alternative to the cookie) |
+| `WISP_ADMIN_USER` | `admin` | Super-admin username (bootstrapped on first start) |
+| `WISP_ADMIN_PASS` | _(empty)_ | Super-admin password. Empty → no login (dev only). Changing it rotates the password on restart |
+| `WISP_SESSION_SECRET` | _(random)_ | Key that signs session cookies. Empty → random per start (sessions reset on restart) |
+| `WISP_API_TOKEN` | _(empty)_ | Optional Bearer token for scripts/API clients (acts as super-admin) |
 | `WISP_WEBHOOK_SECRET` | _(empty)_ | HMAC-SHA256 key for payment webhooks. Empty → webhook disabled |
 | `WISP_BRAND_NAME` | `Wisp` | Dashboard title / brand name (white-label) |
 | `WISP_BRAND_ACCENT` | `#3b82f6` | Dashboard accent color |
@@ -254,7 +279,7 @@ See [`internal/`](internal/) for the package layout and [`cmd/`](cmd/) for the
 - [x] **Auth & white-label** — username/password login, brandable name/accent, HMAC payment webhooks
 - [x] **Phase 6** — Multiprotocol: per-node VLESS / VMess / Trojan, protocol-aware subscription links
 - [x] **Auto-renewal** — prepaid balance; the enforcer renews from balance on expiry/quota
-- [ ] **Phase 5** — Multi-tenant resellers (multiple admins, scoped users)
+- [x] **Phase 5** — Multi-tenant resellers (multiple admins, bcrypt logins, owner-scoped users)
 
 ## Development
 

@@ -42,10 +42,15 @@ type Config struct {
 	// that exceeded their quota or expired.
 	EnforceInterval time.Duration
 
-	// AdminUser / AdminPass are the dashboard login credentials. When AdminPass
-	// is set, the dashboard requires sign-in. Empty AdminPass = no login.
+	// AdminUser / AdminPass bootstrap the super-admin on first start. When
+	// AdminPass is set, the dashboard requires sign-in. Empty AdminPass = no
+	// login (dev: every request acts as a super-admin).
 	AdminUser string
 	AdminPass string
+
+	// SessionSecret signs login session cookies. Empty → a random secret is
+	// generated at startup (sessions then reset on restart).
+	SessionSecret string
 
 	// APIToken, when set, lets scripts/API clients authenticate with a Bearer
 	// token instead of the dashboard cookie. Optional.
@@ -100,6 +105,7 @@ func Load() Config {
 		EnforceInterval: time.Duration(envInt("WISP_ENFORCE_INTERVAL", 60)) * time.Second,
 		AdminUser:       env("WISP_ADMIN_USER", "admin"),
 		AdminPass:       env("WISP_ADMIN_PASS", ""),
+		SessionSecret:   env("WISP_SESSION_SECRET", ""),
 		APIToken:        env("WISP_API_TOKEN", ""),
 		WebhookSecret:   env("WISP_WEBHOOK_SECRET", ""),
 		Brand: BrandConfig{

@@ -39,6 +39,15 @@ type Store interface {
 	GetOrder(id string) (model.Order, error)
 	CreateOrder(o model.Order) error
 	UpdateOrder(o model.Order) error
+
+	ListAdmins() ([]model.Admin, error)
+	GetAdmin(id string) (model.Admin, error)
+	GetAdminByUsername(username string) (model.Admin, error)
+	CreateAdmin(a model.Admin) error
+	DeleteAdmin(id string) error
+
+	// ListUsersByOwner returns only the users owned by ownerID.
+	ListUsersByOwner(ownerID string) ([]model.User, error)
 }
 
 // MemoryStore is a thread-safe, in-process Store. Data is lost on restart;
@@ -49,6 +58,7 @@ type MemoryStore struct {
 	nodes  map[string]model.Node
 	plans  map[string]model.Plan
 	orders map[string]model.Order
+	admins map[string]model.Admin
 }
 
 // NewMemoryStore returns an empty in-memory store.
@@ -58,7 +68,79 @@ func NewMemoryStore() *MemoryStore {
 		nodes:  make(map[string]model.Node),
 		plans:  make(map[string]model.Plan),
 		orders: make(map[string]model.Order),
+		admins: make(map[string]model.Admin),
 	}
+}
+
+// ListUsersByOwner returns the owner's users, oldest first.
+func (s *MemoryStore) ListUsersByOwner(ownerID string) ([]model.User, error) {
+	all, _ := s.ListUsers()
+	out := make([]model.User, 0)
+	for _, u := range all {
+		if u.OwnerID == ownerID {
+			out = append(out, u)
+		}
+	}
+	return out, nil
+}
+
+// ListAdmins returns all admins ordered by creation time (oldest first).
+func (s *MemoryStore) ListAdmins() ([]model.Admin, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]model.Admin, 0, len(s.admins))
+	for _, a := range s.admins {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	return out, nil
+}
+
+// GetAdmin returns the admin with the given id, or ErrNotFound.
+func (s *MemoryStore) GetAdmin(id string) (model.Admin, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	a, ok := s.admins[id]
+	if !ok {
+		return model.Admin{}, ErrNotFound
+	}
+	return a, nil
+}
+
+// GetAdminByUsername returns the admin with the given username, or ErrNotFound.
+func (s *MemoryStore) GetAdminByUsername(username string) (model.Admin, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, a := range s.admins {
+		if a.Username == username {
+			return a, nil
+		}
+	}
+	return model.Admin{}, ErrNotFound
+}
+
+// CreateAdmin stores a new admin.
+func (s *MemoryStore) CreateAdmin(a model.Admin) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.admins[a.ID] = a
+	return nil
+}
+
+// DeleteAdmin removes an admin by id, returning ErrNotFound if absent.
+func (s *MemoryStore) DeleteAdmin(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.admins[id]; !ok {
+		return ErrNotFound
+	}
+	delete(s.admins, id)
+	return nil
 }
 
 // ListUsers returns all users ordered by creation time (oldest first).

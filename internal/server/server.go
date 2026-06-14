@@ -2,6 +2,7 @@
 package server
 
 import (
+	"crypto/rand"
 	"io/fs"
 	"net/http"
 
@@ -14,15 +15,33 @@ import (
 
 // Server holds the dependencies shared by all HTTP handlers.
 type Server struct {
-	cfg     config.Config
-	store   store.Store
-	xray    xray.Client
-	cluster *cluster.Cluster
+	cfg           config.Config
+	store         store.Store
+	xray          xray.Client
+	cluster       *cluster.Cluster
+	sessionSecret []byte // signs session cookies (HMAC-SHA256)
 }
 
 // New constructs a Server with its dependencies injected.
 func New(cfg config.Config, st store.Store, xc xray.Client, cl *cluster.Cluster) *Server {
-	return &Server{cfg: cfg, store: st, xray: xc, cluster: cl}
+	return &Server{
+		cfg:           cfg,
+		store:         st,
+		xray:          xc,
+		cluster:       cl,
+		sessionSecret: sessionSecret(cfg),
+	}
+}
+
+// sessionSecret returns the configured cookie-signing key, or a random one when
+// WISP_SESSION_SECRET is unset (sessions then reset on each restart).
+func sessionSecret(cfg config.Config) []byte {
+	if cfg.SessionSecret != "" {
+		return []byte(cfg.SessionSecret)
+	}
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return b
 }
 
 // Routes builds the HTTP handler with every route registered.
@@ -52,6 +71,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/plans", s.handleCreatePlan)
 	mux.HandleFunc("DELETE /api/plans/{id}", s.handleDeletePlan)
 
+	// Admin management (super-admin only; enforced inside the handlers).
+	mux.HandleFunc("GET /api/admins", s.handleListAdmins)
+	mux.HandleFunc("POST /api/admins", s.handleCreateAdmin)
+	mux.HandleFunc("DELETE /api/admins/{id}", s.handleDeleteAdmin)
+
 	mux.HandleFunc("GET /api/orders", s.handleListOrders)
 	mux.HandleFunc("POST /api/orders", s.handleCreateOrder)
 	mux.HandleFunc("POST /api/orders/{id}/pay", s.handlePayOrder)
@@ -62,6 +86,10 @@ func (s *Server) Routes() http.Handler {
 	// Public endpoints: branding for the login page, and login itself.
 	mux.HandleFunc("GET /api/branding", s.handleBranding)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
+	mux.HandleFunc("POST /api/logout", s.handleLogout)
+
+	// Identity of the signed-in admin (drives the role-aware dashboard).
+	mux.HandleFunc("GET /api/me", s.handleMe)
 
 	// Subscription link consumed directly by VPN clients.
 	mux.HandleFunc("GET /sub/{id}", s.handleSubscription)

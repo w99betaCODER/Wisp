@@ -10,6 +10,7 @@ import "time"
 // human-friendly identifier Xray uses to tag traffic statistics.
 type User struct {
 	ID        string     `json:"id"`                   // panel-internal primary key
+	OwnerID   string     `json:"owner_id"`             // admin who owns this user ("" = unassigned)
 	Email     string     `json:"email"`                // identifier used inside Xray
 	UUID      string     `json:"uuid"`                 // VLESS client UUID
 	Enabled   bool       `json:"enabled"`              // false = access revoked

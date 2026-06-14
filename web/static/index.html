@@ -11,6 +11,11 @@
   <header class="topbar">
     <div class="brand"><span class="logo">🌫️</span> <span id="brand-name">Wisp</span></div>
     <div class="sub">single-binary · multi-node · Xray VPN panel</div>
+    <div class="whoami" id="whoami" hidden>
+      <span id="whoami-user" class="mono"></span>
+      <span id="whoami-role" class="badge proto"></span>
+      <button class="btn ghost" onclick="logout()">sign out</button>
+    </div>
   </header>
 
   <!-- Shown only when the API requires a token and the caller is not signed in -->
@@ -59,7 +64,7 @@
     <section class="card">
       <div class="card-head">
         <h2>Plans</h2>
-        <button class="btn" onclick="toggle('plan-form')">+ Add plan</button>
+        <button class="btn super-only" hidden onclick="toggle('plan-form')">+ Add plan</button>
       </div>
 
       <form id="plan-form" class="form hidden" onsubmit="createPlan(event)">
@@ -82,8 +87,8 @@
       </div>
     </section>
 
-    <!-- Nodes -->
-    <section class="card">
+    <!-- Nodes (super-admin only) -->
+    <section class="card super-only" hidden>
       <div class="card-head">
         <h2>Nodes</h2>
         <button class="btn" onclick="toggle('node-form')">+ Add node</button>
@@ -110,6 +115,34 @@
           <tbody></tbody>
         </table>
         <p class="empty" id="nodes-empty">No nodes — the panel uses its local Xray.</p>
+      </div>
+    </section>
+
+    <!-- Admins (super-admin only) -->
+    <section class="card super-only" hidden>
+      <div class="card-head">
+        <h2>Admins</h2>
+        <button class="btn" onclick="toggle('admin-form')">+ Add admin</button>
+      </div>
+
+      <form id="admin-form" class="form hidden" onsubmit="createAdmin(event)">
+        <input name="username" placeholder="username" autocomplete="off" required />
+        <input name="password" type="password" placeholder="password" autocomplete="new-password" required />
+        <select name="role" class="plan-sel" title="role">
+          <option value="reseller">Reseller — manages own users</option>
+          <option value="super">Super — full access</option>
+        </select>
+        <button class="btn primary" type="submit">Create</button>
+      </form>
+
+      <div class="table-wrap">
+        <table id="admins">
+          <thead>
+            <tr><th>Username</th><th>Role</th><th>Created</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p class="empty" id="admins-empty">No admins — running in open (dev) mode.</p>
       </div>
     </section>
   </main>

@@ -34,6 +34,9 @@ type createPlanRequest struct {
 }
 
 func (s *Server) handleCreatePlan(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSuper(w, r) {
+		return
+	}
 	var req createPlanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -64,6 +67,9 @@ func (s *Server) handleCreatePlan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSuper(w, r) {
+		return
+	}
 	err := s.store.DeletePlan(r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "plan not found")
@@ -84,6 +90,25 @@ func (s *Server) handleListOrders(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to list orders")
 		return
 	}
+	// Resellers only see orders for the users they own.
+	if admin := adminFrom(r); admin.Role != model.RoleSuper {
+		owned, err := s.store.ListUsersByOwner(admin.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to scope orders")
+			return
+		}
+		mine := make(map[string]bool, len(owned))
+		for _, u := range owned {
+			mine[u.ID] = true
+		}
+		filtered := orders[:0]
+		for _, o := range orders {
+			if mine[o.UserID] {
+				filtered = append(filtered, o)
+			}
+		}
+		orders = filtered
+	}
 	writeJSON(w, http.StatusOK, orders)
 }
 
@@ -102,7 +127,16 @@ func (s *Server) handleCreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.store.GetUser(req.UserID); errors.Is(err, store.ErrNotFound) {
+	user, err := s.store.GetUser(req.UserID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusBadRequest, "user not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	if !canAccessUser(r, user) {
 		writeError(w, http.StatusBadRequest, "user not found")
 		return
 	}
@@ -144,6 +178,10 @@ func (s *Server) handlePayOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load order")
+		return
+	}
+	if u, err := s.store.GetUser(order.UserID); err == nil && !canAccessUser(r, u) {
+		writeError(w, http.StatusNotFound, "order not found")
 		return
 	}
 	if order.Status == model.OrderPaid {

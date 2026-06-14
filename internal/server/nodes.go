@@ -33,6 +33,9 @@ type createNodeRequest struct {
 
 // handleCreateNode registers a new node agent.
 func (s *Server) handleCreateNode(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSuper(w, r) {
+		return
+	}
 	var req createNodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -95,6 +98,9 @@ func (s *Server) handleGetNode(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteNode removes a node by id.
 func (s *Server) handleDeleteNode(w http.ResponseWriter, r *http.Request) {
+	if !s.requireSuper(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	err := s.store.DeleteNode(id)
 	if errors.Is(err, store.ErrNotFound) {

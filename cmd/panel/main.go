@@ -37,6 +37,12 @@ func main() {
 	}
 	defer st.Close()
 
+	// Seed (or refresh) the super-admin from WISP_ADMIN_USER / WISP_ADMIN_PASS.
+	// With no password set the panel runs open (dev mode).
+	if err := server.Bootstrap(st, cfg); err != nil {
+		log.Fatalf("bootstrap admin: %v", err)
+	}
+
 	// Connect to Xray if configured; otherwise fall back to a no-op client so
 	// the panel still runs (users are stored but not pushed to a proxy).
 	xc := newXrayClient(cfg)

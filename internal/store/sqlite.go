@@ -43,8 +43,16 @@ func (s *SQLiteStore) Close() error { return s.db.Close() }
 // migrate creates the schema if it does not already exist.
 func (s *SQLiteStore) migrate() error {
 	const schema = `
+CREATE TABLE IF NOT EXISTS admins (
+    id            TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'reseller',
+    created_at    TIMESTAMP NOT NULL
+);
 CREATE TABLE IF NOT EXISTS users (
     id         TEXT PRIMARY KEY,
+    owner_id   TEXT NOT NULL DEFAULT '',
     email      TEXT NOT NULL UNIQUE,
     uuid       TEXT NOT NULL,
     enabled    INTEGER NOT NULL DEFAULT 1,
@@ -97,6 +105,7 @@ CREATE TABLE IF NOT EXISTS orders (
 		`ALTER TABLE users ADD COLUMN used INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE users ADD COLUMN balance INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE users ADD COLUMN auto_renew TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN owner_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE nodes ADD COLUMN protocol TEXT NOT NULL DEFAULT 'vless'`,
 		`ALTER TABLE nodes ADD COLUMN public_host TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE nodes ADD COLUMN public_port INTEGER NOT NULL DEFAULT 443`,
@@ -111,7 +120,7 @@ CREATE TABLE IF NOT EXISTS orders (
 // ListUsers returns all users ordered by creation time (oldest first).
 func (s *SQLiteStore) ListUsers() ([]model.User, error) {
 	rows, err := s.db.Query(`
-		SELECT id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at
+		SELECT id, owner_id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at
 		FROM users ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
@@ -132,7 +141,7 @@ func (s *SQLiteStore) ListUsers() ([]model.User, error) {
 // GetUser returns the user with the given id, or ErrNotFound.
 func (s *SQLiteStore) GetUser(id string) (model.User, error) {
 	row := s.db.QueryRow(`
-		SELECT id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at
+		SELECT id, owner_id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at
 		FROM users WHERE id = ?`, id)
 
 	u, err := scanUser(row)
@@ -148,9 +157,9 @@ func (s *SQLiteStore) GetUser(id string) (model.User, error) {
 // CreateUser inserts a new user.
 func (s *SQLiteStore) CreateUser(u model.User) error {
 	_, err := s.db.Exec(`
-		INSERT INTO users (id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		u.ID, u.Email, u.UUID, u.Enabled, u.DataLimit, u.Used, u.Balance, u.AutoRenew, u.CreatedAt, nullTime(u.ExpiresAt))
+		INSERT INTO users (id, owner_id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		u.ID, u.OwnerID, u.Email, u.UUID, u.Enabled, u.DataLimit, u.Used, u.Balance, u.AutoRenew, u.CreatedAt, nullTime(u.ExpiresAt))
 	if err != nil {
 		return fmt.Errorf("create user: %w", err)
 	}
@@ -390,10 +399,118 @@ func (s *SQLiteStore) UpdateOrder(o model.Order) error {
 	return nil
 }
 
+// ListUsersByOwner returns the owner's users, oldest first.
+func (s *SQLiteStore) ListUsersByOwner(ownerID string) ([]model.User, error) {
+	rows, err := s.db.Query(`
+		SELECT id, owner_id, email, uuid, enabled, data_limit, used, balance, auto_renew, created_at, expires_at
+		FROM users WHERE owner_id = ? ORDER BY created_at ASC`, ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("list users by owner: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// ListAdmins returns all admins ordered by creation time (oldest first).
+func (s *SQLiteStore) ListAdmins() ([]model.Admin, error) {
+	rows, err := s.db.Query(`
+		SELECT id, username, password_hash, role, created_at
+		FROM admins ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list admins: %w", err)
+	}
+	defer rows.Close()
+
+	var out []model.Admin
+	for rows.Next() {
+		a, err := scanAdmin(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// GetAdmin returns the admin with the given id, or ErrNotFound.
+func (s *SQLiteStore) GetAdmin(id string) (model.Admin, error) {
+	row := s.db.QueryRow(`
+		SELECT id, username, password_hash, role, created_at FROM admins WHERE id = ?`, id)
+	a, err := scanAdmin(row)
+	if err == sql.ErrNoRows {
+		return model.Admin{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Admin{}, fmt.Errorf("get admin: %w", err)
+	}
+	return a, nil
+}
+
+// GetAdminByUsername returns the admin with the given username, or ErrNotFound.
+func (s *SQLiteStore) GetAdminByUsername(username string) (model.Admin, error) {
+	row := s.db.QueryRow(`
+		SELECT id, username, password_hash, role, created_at FROM admins WHERE username = ?`, username)
+	a, err := scanAdmin(row)
+	if err == sql.ErrNoRows {
+		return model.Admin{}, ErrNotFound
+	}
+	if err != nil {
+		return model.Admin{}, fmt.Errorf("get admin by username: %w", err)
+	}
+	return a, nil
+}
+
+// CreateAdmin inserts a new admin, or replaces one with the same id (so it
+// doubles as an update, e.g. for env-driven password rotation).
+func (s *SQLiteStore) CreateAdmin(a model.Admin) error {
+	_, err := s.db.Exec(`
+		INSERT OR REPLACE INTO admins (id, username, password_hash, role, created_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		a.ID, a.Username, a.PasswordHash, a.Role, a.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("create admin: %w", err)
+	}
+	return nil
+}
+
+// DeleteAdmin removes an admin by id, returning ErrNotFound if absent.
+func (s *SQLiteStore) DeleteAdmin(id string) error {
+	res, err := s.db.Exec(`DELETE FROM admins WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete admin: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // scanner is satisfied by both *sql.Row and *sql.Rows, so scanUser works
 // for single-row and multi-row queries alike.
 type scanner interface {
 	Scan(dest ...any) error
+}
+
+// scanAdmin reads one admin row.
+func scanAdmin(sc scanner) (model.Admin, error) {
+	var a model.Admin
+	if err := sc.Scan(&a.ID, &a.Username, &a.PasswordHash, &a.Role, &a.CreatedAt); err != nil {
+		return model.Admin{}, err
+	}
+	return a, nil
 }
 
 // scanPlan reads one plan row.
@@ -435,7 +552,7 @@ func scanUser(sc scanner) (model.User, error) {
 		u       model.User
 		expires sql.NullTime
 	)
-	if err := sc.Scan(&u.ID, &u.Email, &u.UUID, &u.Enabled, &u.DataLimit, &u.Used, &u.Balance, &u.AutoRenew, &u.CreatedAt, &expires); err != nil {
+	if err := sc.Scan(&u.ID, &u.OwnerID, &u.Email, &u.UUID, &u.Enabled, &u.DataLimit, &u.Used, &u.Balance, &u.AutoRenew, &u.CreatedAt, &expires); err != nil {
 		return model.User{}, err
 	}
 	if expires.Valid {

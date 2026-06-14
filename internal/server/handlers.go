@@ -18,9 +18,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// handleListUsers returns every user.
+// handleListUsers returns the users the caller may see: a super-admin sees
+// everyone, a reseller only the users they own.
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := s.store.ListUsers()
+	admin := adminFrom(r)
+	var (
+		users []model.User
+		err   error
+	)
+	if admin.Role == model.RoleSuper {
+		users, err = s.store.ListUsers()
+	} else {
+		users, err = s.store.ListUsersByOwner(admin.ID)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list users")
 		return
@@ -51,6 +61,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 	user := model.User{
 		ID:        util.NewID(),
+		OwnerID:   adminFrom(r).ID, // the creating admin owns the user
 		Email:     req.Email,
 		UUID:      util.NewUUID(),
 		Enabled:   true,
@@ -92,6 +103,10 @@ func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to get user")
 		return
 	}
+	if !canAccessUser(r, user) {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
 	writeJSON(w, http.StatusOK, user)
 }
 
@@ -107,6 +122,10 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	if !canAccessUser(r, user) {
+		writeError(w, http.StatusNotFound, "user not found")
 		return
 	}
 
@@ -139,6 +158,10 @@ func (s *Server) handleResetUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	if !canAccessUser(r, user) {
+		writeError(w, http.StatusNotFound, "user not found")
 		return
 	}
 
@@ -179,6 +202,10 @@ func (s *Server) handleTopUp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
 		return
 	}
+	if !canAccessUser(r, user) {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
 	user.Balance += req.AmountCents
 	if err := s.store.UpdateUser(user); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to update user")
@@ -210,6 +237,10 @@ func (s *Server) handleSetAutoRenew(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load user")
+		return
+	}
+	if !canAccessUser(r, user) {
+		writeError(w, http.StatusNotFound, "user not found")
 		return
 	}
 	user.AutoRenew = req.PlanID
